@@ -80,6 +80,7 @@ Add `permissions: packages: write` to the job when pushing to GHCR with `GITHUB_
 
 - **Do not pass secrets in `build_args`.** Build args are stored in the image history.
 - Registry credentials are kept in a temporary Docker config that is deleted at the end of the action, even on failure. Your job's default Docker config is never touched.
+  As a consequence, registry logins made earlier in the job (for example, for a private base image in another registry) and per-user CLI plugins in `~/.docker/cli-plugins` are not visible during the build.
 - Inputs are passed to scripts as environment variables, never interpolated into shell code.
 
 ## License
