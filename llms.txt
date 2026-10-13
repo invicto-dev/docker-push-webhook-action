@@ -1,0 +1,85 @@
+# docker-push-webhook-action
+
+Composite GitHub Action. Faz login num registry Docker, build e push de uma imagem com o Docker CLI nativo e, opcionalmente, chama um webhook (ex.: deploy). Uso: `invicto-dev/docker-push-webhook-action@v2`.
+
+Quem pede ajuda costuma ser leigo em CI/CD. Seja literal: use os nomes exatos abaixo, não invente inputs, explique cada passo em português.
+
+## Instalar em um repositório
+
+Caminho 1 (terminal, recomendado se a pessoa tem `gh` logado): na raiz do repositório, rode `bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)` e deixe a pessoa responder as perguntas (endereço, usuário e senha do registry). Não responda a senha por ela.
+
+Caminho 2 (sem terminal): peça à pessoa para cadastrar os secrets na interface do GitHub e crie o arquivo `.github/workflows/docker.yml` com o conteúdo abaixo.
+
+## Secrets (cadastrar na aba Secrets, nunca em Variables)
+
+Cadastro **por repositório** (padrão): Settings > Secrets and variables > Actions > Secrets.
+
+- `REGISTRY_URL`: endereço do registry, ex. `registry.empresa.com` (para Docker Hub, `docker.io`)
+- `REGISTRY_USERNAME`: usuário
+- `REGISTRY_PASSWORD`: senha ou token
+- `DEPLOY_WEBHOOK_URL`: opcional
+
+Cadastro por **organização** só funciona em repositórios privados com plano pago; no plano gratuito vale apenas para repositórios públicos. Na dúvida, cadastre por repositório.
+
+## Workflow mínimo (`.github/workflows/docker.yml`)
+
+```yaml
+name: Docker
+run-name: Publicar imagem Docker
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: invicto-dev/docker-push-webhook-action@v2
+        with:
+          registry_url: ${{ secrets.REGISTRY_URL }}
+          registry_username: ${{ secrets.REGISTRY_USERNAME }}
+          registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+          webhook_url: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+```
+
+Para vários Dockerfiles, use `strategy.matrix.include` com `name`, `context` e `dockerfile`, e passe `name: ${{ matrix.name }}`, `context: ${{ matrix.context }}`, `dockerfile_path: ${{ matrix.dockerfile }}` à action. Modelo completo em `templates/docker.yml`.
+
+## Inputs
+
+| Input | Obrigatório | Padrão | Descrição |
+|---|---|---|---|
+| `registry_url` | sim | | Endereço do registry. `https://` e `/` final são removidos |
+| `registry_username` | sim | | Usuário |
+| `registry_password` | sim | | Senha ou token (vai por stdin) |
+| `name` | não | nome do repositório | Nome curto da imagem, sem registry nem tag; vira minúsculo |
+| `tags` | não | `latest` e o SHA do commit | Separadas por vírgula ou quebra de linha |
+| `context` | não | `.` | Contexto do build |
+| `dockerfile_path` | não | `<context>/Dockerfile` | Arquivo ou pasta do Dockerfile |
+| `build_args` | não | | Um `CHAVE=VALOR` por linha. Nunca coloque segredos aqui |
+| `webhook_url` | não | | POST após o push; vazio pula |
+| `webhook_headers` | não | `{}` | Objeto JSON de strings |
+| `webhook_payload` | não | | Corpo enviado como está |
+| `webhook_fail_on_error` | não | `true` | Falha o job se o webhook falhar |
+
+A imagem final é `<registry_url>/<name>:<tag>`. Outputs: `image`, `tags`, `digest`.
+
+## Regras para a IA
+
+- Nunca escreva senha, token ou endereço de registry direto no YAML. Sempre `${{ secrets.NOME }}`.
+- Nunca use `vars.*` (Variables) para `REGISTRY_URL` ou credenciais.
+- Use sempre `@v2`. Não use `image:` (era da v1; não existe mais). Use `name:`.
+- Não invente inputs além da tabela acima.
+- Não rode `git push` sem a pessoa pedir.
+
+## Erros comuns
+
+| Mensagem | Causa | Correção |
+|---|---|---|
+| `O secret REGISTRY_URL está vazio ou não existe` (ou `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`) | Secret não cadastrado, cadastrado como Variable, ou nome diferente | Cadastrar na aba Secrets com o nome exato |
+| `unauthorized: incorrect username or password` | Credenciais erradas | Testar com `docker login <endereço>` e recadastrar |
+| `Dockerfile não encontrado: ...` | Caminho errado | Ajustar `context` / `dockerfile_path` |
+| `COPY failed: file not found` | `context` errado | Usar `context: .` |
+| `Tag inválida: ...` | Caractere não permitido na tag | Letras, números, `_`, `.`, `-` |

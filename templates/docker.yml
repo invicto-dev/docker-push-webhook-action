@@ -1,0 +1,57 @@
+# Este arquivo publica (envia) a imagem Docker do projeto para o registry da empresa.
+#
+# ANTES DE USAR, cadastre estes secrets neste repositório, em:
+#   Settings > Secrets and variables > Actions > aba "Secrets"
+#   (cadastre como SECRET, não como Variable, e use os nomes exatos)
+#
+#     REGISTRY_URL        -> endereço do registry. Ex: registry.empresa.com
+#     REGISTRY_USERNAME   -> usuário do registry
+#     REGISTRY_PASSWORD   -> senha ou token do registry
+#     DEPLOY_WEBHOOK_URL  -> (opcional) endereço avisado após o envio, para
+#                            fazer deploy automático. Sem ele, nada é avisado.
+
+name: Docker
+run-name: Publicar imagem Docker
+
+# QUANDO roda:
+on:
+  push:
+    branches: [main]   # automaticamente, sempre que algo novo entrar na branch "main"
+  workflow_dispatch:   # ou manualmente: aba Actions > Docker > Run workflow
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest  # máquina Linux do GitHub que faz o trabalho
+    permissions:
+      contents: read        # só precisa LER o código do repositório
+
+    # PARA PUBLICAR MAIS DE UMA IMAGEM (ex.: backend e front no mesmo repositório):
+    # descomente o bloco "strategy" abaixo, ajuste os valores e, no passo final,
+    # descomente as 3 linhas marcadas com "matrix".
+    #
+    # strategy:
+    #   matrix:
+    #     include:
+    #       - name: meu-backend          # nome da imagem
+    #         context: .                 # pasta usada para montar a imagem
+    #         dockerfile: Dockerfile     # "receita" da imagem
+    #       - name: meu-front
+    #         context: front
+    #         dockerfile: front/Dockerfile
+
+    steps:
+      # Passo 1: baixa o código do repositório
+      - uses: actions/checkout@v4
+
+      # Passo 2: monta a imagem, envia para o registry e (opcional) avisa o webhook.
+      # Por padrão a imagem tem o nome do repositório e as tags "latest" e o
+      # código do commit. Para mudar o nome: adicione  name: meu-app
+      - uses: invicto-dev/docker-push-webhook-action@v2
+        with:
+          registry_url: ${{ secrets.REGISTRY_URL }}
+          registry_username: ${{ secrets.REGISTRY_USERNAME }}
+          registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+          webhook_url: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          # name: ${{ matrix.name }}                  # matrix
+          # context: ${{ matrix.context }}            # matrix
+          # dockerfile_path: ${{ matrix.dockerfile }} # matrix
