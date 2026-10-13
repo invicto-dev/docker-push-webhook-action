@@ -1,0 +1,81 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest -v test_webhook
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start registry with auth
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/auth"
+          docker run --rm --entrypoint htpasswd httpd:2 -Bbn test test-pass > "$RUNNER_TEMP/auth/htpasswd"
+          docker run -d -p 5000:5000 \
+            -v "$RUNNER_TEMP/auth:/auth" \
+            -e REGISTRY_AUTH=htpasswd \
+            -e REGISTRY_AUTH_HTPASSWD_REALM=e2e \
+            -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+            registry:2
+          for _ in $(seq 30); do curl -s -o /dev/null localhost:5000/v2/ && break; sleep 1; done
+
+      - id: action
+        uses: ./
+        with:
+          registry_url: localhost:5000
+          registry_username: test
+          registry_password: test-pass
+          image: localhost:5000/e2e
+          tags: |
+            v1, ${{ github.sha }}
+          dockerfile_path: test
+          build_args: GREETING=olá mundo
+
+      - name: Assert push
+        env:
+          IMAGE: ${{ steps.action.outputs.image }}
+          TAGS: ${{ steps.action.outputs.tags }}
+          DIGEST: ${{ steps.action.outputs.digest }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE" == "localhost:5000/e2e:v1" ]]
+          [[ "$TAGS" == "localhost:5000/e2e:v1"$'\n'"localhost:5000/e2e:$SHA" ]]
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker rmi localhost:5000/e2e:v1 "localhost:5000/e2e:$SHA"
+          if docker pull localhost:5000/e2e:v1; then
+            echo "::error::credentials leaked into the default Docker config"
+            exit 1
+          fi
+          echo test-pass | docker login localhost:5000 -u test --password-stdin
+          docker pull localhost:5000/e2e:v1
+          docker pull "localhost:5000/e2e:$SHA"
+          docker inspect --format '{{json .RepoDigests}}' localhost:5000/e2e:v1 | grep -q "$DIGEST"
+          [[ "$(docker inspect --format '{{index .Config.Labels "greeting"}}' localhost:5000/e2e:v1)" == "olá mundo" ]]
+
+      - id: bad_tag
+        uses: ./
+        continue-on-error: true
+        with:
+          registry_username: test
+          registry_password: test-pass
+          image: localhost:5000/e2e
+          tags: bad tag!
+
+      - name: Assert invalid tag fails
+        env:
+          OUTCOME: ${{ steps.bad_tag.outcome }}
+        run: '[[ "$OUTCOME" == "failure" ]]'

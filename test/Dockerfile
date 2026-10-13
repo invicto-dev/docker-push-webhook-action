@@ -1,0 +1,4 @@
+FROM busybox:1.36
+ARG GREETING
+RUN test -n "$GREETING"
+LABEL greeting="$GREETING"
