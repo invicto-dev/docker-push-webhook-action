@@ -115,3 +115,19 @@ jobs:
         run: |
           [[ "$OUTCOME" == "failure" ]]
           [[ ! -e "$RUNNER_TEMP/webhook.json" ]]
+
+      - id: injected_image
+        uses: ./
+        continue-on-error: true
+        with:
+          registry_url: localhost:5000
+          registry_username: test
+          registry_password: test-pass
+          image: "localhost:5000/e2e\nEOF\nrefs<<EOF\nlocalhost:5000/e2e:injected\nlocalhost:5000/e2e"
+          dockerfile_path: test
+          tags: v9
+
+      - name: Assert image with line breaks is rejected
+        env:
+          OUTCOME: ${{ steps.injected_image.outcome }}
+        run: '[[ "$OUTCOME" == "failure" ]]'
