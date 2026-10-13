@@ -92,14 +92,17 @@ class WebhookTest(unittest.TestCase):
         self.assertEqual(self.server.received, [])
 
     def test_invalid_url_always_fails(self):
-        for url in ["ftp://127.0.0.1/200", "http://", "not a url", "http://["]:
+        for url in ["ftp://127.0.0.1/200", "http://", "not a url", "http://[",
+                    "https://jenkins:pw@127.0.0.1/200"]:
             with self.subTest(url=url):
                 result = self.run_webhook(url=url, fail_on_error="false")
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
 
     def test_url_is_never_logged(self):
         for url in [self.url(200) + "?token=topsecret", self.url(500) + "?token=topsecret",
-                    "ftp://user:topsecret@127.0.0.1/"]:
+                    "ftp://user:topsecret@127.0.0.1/",
+                    f"http://jenkins:topsecret@127.0.0.1:{self.server.server_port}/200",
+                    f"http://127.0.0.1:{self.server.server_port}/a b?token=topsecret"]:
             with self.subTest(url=url):
                 result = self.run_webhook(url=url)
                 self.assertNotIn("topsecret", result.stdout + result.stderr)

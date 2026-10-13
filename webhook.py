@@ -59,10 +59,13 @@ def validate_url(url):
     try:
         parts = urllib.parse.urlsplit(url)
         valid = parts.scheme in ("http", "https") and bool(parts.hostname)
+        has_credentials = bool(parts.username or parts.password)
     except ValueError:
-        valid = False
+        valid, has_credentials = False, False
     if not valid:
         fail("webhook_url must be an http(s) URL with a host")
+    if has_credentials:
+        fail("webhook_url must not contain credentials; send them in webhook_headers")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -95,7 +98,9 @@ def main():
     except urllib.error.HTTPError as error:
         delivery_failed(f"Webhook responded HTTP {error.code}", fail_on_error)
     except (OSError, http.client.HTTPException) as error:
-        delivery_failed(f"Webhook request failed: {getattr(error, 'reason', error)}", fail_on_error)
+        # Only the type: exception text can echo parts of the URL or the response.
+        reason = getattr(error, "reason", error)
+        delivery_failed(f"Webhook request failed: {type(reason).__name__}", fail_on_error)
     print(f"Webhook responded HTTP {status}")
 
 

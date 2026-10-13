@@ -74,6 +74,7 @@ Add `permissions: packages: write` to the job when pushing to GHCR with `GITHUB_
 - Always `POST`, 30-second timeout. Redirects are not followed and count as failures.
 - The webhook runs only after a successful push and cannot reference this action's own outputs. Image and tags are already known to the caller. The digest is not available inside the payload.
 - URL, headers, payload and response body are never printed in the logs.
+- `webhook_url` must not embed credentials (`https://user:pass@host`); send them in `webhook_headers` instead.
 
 ## Security notes
 
