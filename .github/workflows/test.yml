@@ -53,10 +53,10 @@ jobs:
       - id: action
         uses: ./
         with:
-          registry_url: localhost:5000
+          registry_url: http://localhost:5000/
           registry_username: test
           registry_password: test-pass
-          image: localhost:5000/e2e
+          name: e2e
           tags: |
             v1, ${{ github.sha }}
           dockerfile_path: test
@@ -102,33 +102,79 @@ jobs:
         uses: ./
         continue-on-error: true
         with:
+          registry_url: localhost:5000
           registry_username: test
           registry_password: test-pass
-          image: localhost:5000/e2e
+          name: e2e
           dockerfile_path: test
           tags: bad tag!
           webhook_url: http://127.0.0.1:8080/deploy
 
-      - name: Assert invalid tag fails without calling the webhook
+      - id: missing_registry
+        uses: ./
+        continue-on-error: true
+        with:
+          registry_url: ''
+          registry_username: test
+          registry_password: test-pass
+          name: e2e
+          dockerfile_path: test
+          webhook_url: http://127.0.0.1:8080/deploy
+
+      - name: Assert bad config fails without calling the webhook
         env:
-          OUTCOME: ${{ steps.bad_tag.outcome }}
+          BAD_TAG: ${{ steps.bad_tag.outcome }}
+          MISSING_REGISTRY: ${{ steps.missing_registry.outcome }}
         run: |
-          [[ "$OUTCOME" == "failure" ]]
+          [[ "$BAD_TAG" == "failure" ]]
+          [[ "$MISSING_REGISTRY" == "failure" ]]
           [[ ! -e "$RUNNER_TEMP/webhook.json" ]]
 
-      - id: injected_image
+      - id: injected_name
         uses: ./
         continue-on-error: true
         with:
           registry_url: localhost:5000
           registry_username: test
           registry_password: test-pass
-          image: "localhost:5000/e2e\nEOF\nrefs<<EOF\nlocalhost:5000/e2e:injected\nlocalhost:5000/e2e"
+          name: "e2e\nEOF\nrefs<<EOF\nlocalhost:5000/e2e:injected\nlocalhost:5000/e2e"
           dockerfile_path: test
           build_args: GREETING=x
           tags: v9
 
-      - name: Assert image with line breaks is rejected
+      - name: Assert name with line breaks is rejected
         env:
-          OUTCOME: ${{ steps.injected_image.outcome }}
+          OUTCOME: ${{ steps.injected_name.outcome }}
         run: '[[ "$OUTCOME" == "failure" ]]'
+
+      - id: defaults
+        uses: ./
+        with:
+          registry_url: localhost:5000
+          registry_username: test
+          registry_password: test-pass
+          dockerfile_path: test
+          build_args: GREETING=defaults
+
+      - id: uppercase_name
+        uses: ./
+        with:
+          registry_url: localhost:5000
+          registry_username: test
+          registry_password: test-pass
+          name: E2E-Upper
+          dockerfile_path: test
+          build_args: GREETING=upper
+          tags: v1
+
+      - name: Assert default name, default tags and lowercased name
+        env:
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          repo="$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')"
+          echo test-pass | docker login localhost:5000 -u test --password-stdin
+          docker pull "localhost:5000/$repo:latest"
+          docker pull "localhost:5000/$repo:$SHA"
+          docker pull localhost:5000/e2e-upper:v1
