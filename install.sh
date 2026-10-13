@@ -4,6 +4,10 @@
 #   bash install.sh             # secrets cadastrados neste repositório (padrão)
 #   bash install.sh --org ORG   # secrets cadastrados na organização (veja INSTALAR.md)
 # Nada é commitado nem enviado sem a sua confirmação.
+# Ordem das perguntas: [sobrescrever o workflow existente?] [com --org, plano gratuito +
+# repo privado: continuar?] [com --org: "Continuar?" (senha vale p/ TODOS os repos da org)]
+# endereço, usuário, senha, webhook, [fazer commit e push?].
+# Recusar a sobrescrita mantém o workflow, mas os secrets ainda são cadastrados.
 set -euo pipefail
 
 ACTION="invicto-dev/docker-push-webhook-action@v2"
@@ -15,12 +19,12 @@ die() {
   exit 1
 }
 
-# confirm "pergunta": retorna 0 só para s/S/y/Y (EOF ou qualquer outra coisa = não).
+# confirm "pergunta": retorna 0 só para s/sim/y/yes, em qualquer caixa (EOF ou outra coisa = não).
 confirm() {
-  local ans
+  local ans yes_re='^([sSyY]|[sS][iI][mM]|[yY][eE][sS])$'
   printf '%s [s/N] ' "$1"
   read -r ans || ans=""
-  [[ "$ans" == [sSyY]* ]]
+  [[ "$ans" =~ $yes_re ]]
 }
 
 while (( $# )); do
@@ -50,8 +54,9 @@ while IFS= read -r f; do
 done < <(git ls-files --cached --others --exclude-standard | grep -E '(^|/)Dockerfile$' | grep -v 'node_modules/' || true)
 (( count > 0 )) || die "Nenhum Dockerfile encontrado neste repositório."
 
+write_workflow=1
 if [[ -f "$WORKFLOW" ]]; then
-  confirm "$WORKFLOW já existe. Sobrescrever?" || { echo "Nada foi alterado."; exit 0; }
+  confirm "$WORKFLOW já existe. Sobrescrever?" || write_workflow=0
 fi
 
 if [[ -n "$org" ]]; then
@@ -62,25 +67,29 @@ if [[ -n "$org" ]]; then
     echo "No plano gratuito, secrets de organização NÃO chegam a repositórios privados."
     confirm "Continuar mesmo assim?" || { echo "Cancelado. Rode de novo sem --org."; exit 0; }
   fi
+  echo "AVISO: com --org, TODOS os repositórios da organização '$org' (inclusive públicos) poderão usar a senha do registry."
+  confirm "Continuar?" || { echo "Cancelado. Nada foi cadastrado."; exit 0; }
 fi
 
 printf 'Endereço do registry (ex: registry.empresa.com): '
-read -r host || host=""
+IFS= read -r host || host=""
 printf 'Usuário do registry: '
-read -r user || user=""
+IFS= read -r user || user=""
 printf 'Senha ou token do registry (não aparece na tela): '
-read -rs pass || pass=""
+IFS= read -rs pass || pass=""
 echo
 printf 'URL do webhook de deploy (opcional, Enter para pular): '
-read -r hook || hook=""
+IFS= read -r hook || hook=""
 [[ -n "${host//[[:space:]]/}" && -n "$user" && -n "$pass" ]] || die "Endereço, usuário e senha do registry são obrigatórios."
 
 set_secret() {
-  if [[ -n "$org" ]]; then
-    printf '%s' "$2" | gh secret set "$1" --org "$org" --visibility all >/dev/null
-  else
-    printf '%s' "$2" | gh secret set "$1" --repo "$repo" >/dev/null
-  fi
+  {
+    if [[ -n "$org" ]]; then
+      printf '%s' "$2" | gh secret set "$1" --org "$org" --visibility all
+    else
+      printf '%s' "$2" | gh secret set "$1" --repo "$repo"
+    fi
+  } >/dev/null || die "Não consegui cadastrar o secret $1. Você precisa ser admin do repositório (ou owner da organização com --org)."
   echo "  secret $1 cadastrado"
 }
 set_secret REGISTRY_URL "$host"
@@ -124,6 +133,11 @@ unique_name() {
   used="$used$img "
 }
 
+if (( ! write_workflow )); then
+  echo "$WORKFLOW mantido como estava. Secrets atualizados."
+  exit 0
+fi
+
 mkdir -p "$(dirname "$WORKFLOW")"
 {
   cat <<'EOF'
@@ -152,7 +166,7 @@ EOF
     for f in "${dockerfiles[@]}"; do
       d="$(dir_of "$f")"
       if [[ "$d" == "." ]]; then
-        unique_name "$(slug "$(basename "$root")")"
+        unique_name "$(slug "${repo#*/}")"
         ctx="."
       else
         unique_name "$(slug "$d")"
@@ -185,6 +199,12 @@ EOF
     fi
   fi
 } > "$WORKFLOW"
+
+# Vazio = sem mudança (novo, alterado ou staged aparecem aqui).
+if [[ -z "$(git status --porcelain -- "$WORKFLOW")" ]]; then
+  echo "workflow sem mudanças: nada para commitar."
+  exit 0
+fi
 
 echo
 echo "Pronto: $WORKFLOW criado."

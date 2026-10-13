@@ -14,7 +14,7 @@ Caminho 2 (sem terminal): peça à pessoa para cadastrar os secrets na interface
 
 Cadastro **por repositório** (padrão): Settings > Secrets and variables > Actions > Secrets.
 
-- `REGISTRY_URL`: endereço do registry, ex. `registry.empresa.com` (para Docker Hub, `docker.io`)
+- `REGISTRY_URL`: endereço do registry, ex. `registry.empresa.com` (para Docker Hub, `docker.io`; nesse caso o input `name` precisa ser `SEU_USUARIO/app`, senão a action falha)
 - `REGISTRY_USERNAME`: usuário
 - `REGISTRY_PASSWORD`: senha ou token
 - `DEPLOY_WEBHOOK_URL`: opcional

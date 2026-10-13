@@ -60,7 +60,7 @@
 
 **Interfaces:**
 - Consumes (variáveis de ambiente): `REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`, `NAME`, `TAGS`, `BUILD_CONTEXT`, `DOCKERFILE_PATH`, mais `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_OUTPUT`, `RUNNER_TEMP`.
-- Produces (linhas em `$GITHUB_OUTPUT`): `registry=<host normalizado>`, `dockerfile=<caminho>`, `docker_config=<pasta temporária>`, `refs<<EOF ... EOF` (uma referência `registry/name:tag` por linha). Em erro: `::error::<mensagem pt-BR>` no stdout e exit 1, sem escrever nada em `GITHUB_OUTPUT`.
+- Produces (linhas em `$GITHUB_OUTPUT`): `registry=<host normalizado, com namespace se houver>`, `registry_host=<só o host, usado por docker login/logout>`, `dockerfile=<caminho>`, `docker_config=<pasta temporária>`, `refs<<EOF ... EOF` (uma referência `registry/name:tag` por linha). Em erro: `::error::<mensagem pt-BR>` no stdout e exit 1, sem escrever nada em `GITHUB_OUTPUT`.
 
 - [ ] **Step 1: Escrever os testes que falham**
 
@@ -337,6 +337,7 @@ if (( count == 0 )); then fail "Nenhuma tag informada."; fi
 docker_config="$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config.XXXXXX")"
 {
   echo "registry=$registry"
+  echo "registry_host=${registry%%/*}"
   echo "dockerfile=$dockerfile"
   echo "docker_config=$docker_config"
   echo "refs<<EOF"
@@ -485,7 +486,7 @@ runs:
       shell: bash
       env:
         DOCKER_CONFIG: ${{ steps.prepare.outputs.docker_config }}
-        REGISTRY: ${{ steps.prepare.outputs.registry }}
+        REGISTRY: ${{ steps.prepare.outputs.registry_host }}
         REGISTRY_USERNAME: ${{ inputs.registry_username }}
         REGISTRY_PASSWORD: ${{ inputs.registry_password }}
       run: |
@@ -568,7 +569,7 @@ runs:
       shell: bash
       env:
         DOCKER_CONFIG: ${{ steps.prepare.outputs.docker_config }}
-        REGISTRY: ${{ steps.prepare.outputs.registry }}
+        REGISTRY: ${{ steps.prepare.outputs.registry_host }}
       run: |
         set -uo pipefail
         docker logout "$REGISTRY" || true

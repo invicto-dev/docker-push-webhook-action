@@ -40,6 +40,16 @@ fi
 if [[ "${name##*/}" == *[:@]* ]]; then
   fail "O campo 'name' não pode ter tag nem digest (:tag ou @sha256). Use o campo 'tags'."
 fi
+name_re='^[a-z0-9]+(([._]|__|-+)[a-z0-9]+)*(/[a-z0-9]+(([._]|__|-+)[a-z0-9]+)*)*$'
+if [[ ! "$name" =~ $name_re ]]; then
+  fail "O nome da imagem '$name' é inválido. Use só letras minúsculas, números, '.', '_' e '-', com '/' entre partes (ex: meu-app ou time/meu-app), sem começar nem terminar com símbolo. Se veio do nome do repositório, informe o campo 'name' no workflow."
+fi
+case "$registry" in
+  docker.io|index.docker.io|registry-1.docker.io)
+    if [[ "$name" != */* ]]; then
+      fail "No Docker Hub o nome precisa ser SEU_USUARIO/nome-da-imagem (campo name)."
+    fi ;;
+esac
 image="$registry/$name"
 
 dockerfile="${DOCKERFILE_PATH:-$BUILD_CONTEXT}"
@@ -71,6 +81,7 @@ if (( count == 0 )); then fail "Nenhuma tag informada."; fi
 docker_config="$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config.XXXXXX")"
 {
   echo "registry=$registry"
+  echo "registry_host=${registry%%/*}"
   echo "dockerfile=$dockerfile"
   echo "docker_config=$docker_config"
   echo "refs<<EOF"

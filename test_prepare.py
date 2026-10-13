@@ -86,6 +86,30 @@ class RegistryTest(unittest.TestCase):
         rc, out, o = run_prepare(REGISTRY_URL="registry.example.com/qriar", NAME="app")
         self.assertEqual(rc, 0, out)
         self.assertTrue(o["refs"].startswith("registry.example.com/qriar/app:latest"))
+        self.assertEqual(o["registry"], "registry.example.com/qriar")
+        self.assertEqual(o["registry_host"], "registry.example.com")  # docker login uses only the host
+
+    def test_registry_host_without_namespace(self):
+        rc, out, o = run_prepare(REGISTRY_URL="localhost:5000")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(o["registry_host"], "localhost:5000")
+
+    def test_docker_hub_name_needs_a_user(self):
+        for url in ("docker.io", "https://index.docker.io/", "registry-1.docker.io"):
+            rc, out, o = run_prepare(REGISTRY_URL=url, NAME="app")
+            self.assertEqual(rc, 1, out)
+            self.assertIn("SEU_USUARIO/nome-da-imagem", out)
+            self.assertEqual(o, {})
+        rc, out, _ = run_prepare(REGISTRY_URL="docker.io")  # default name from the repo has no slash either
+        self.assertEqual(rc, 1, out)
+
+    def test_docker_hub_with_user_is_accepted(self):
+        rc, out, o = run_prepare(REGISTRY_URL="docker.io", NAME="user/app")
+        self.assertEqual(rc, 0, out)
+        self.assertTrue(o["refs"].startswith("docker.io/user/app:latest"))
+        rc, out, o = run_prepare(REGISTRY_URL="docker.io/meuusuario", NAME="app")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(o["registry_host"], "docker.io")
 
     def test_empty_registry_names_the_secret(self):
         for value in ("", "   "):
@@ -137,6 +161,26 @@ class NameTest(unittest.TestCase):
             rc, out, o = run_prepare(NAME=value)
             self.assertEqual(rc, 1, out)
             self.assertEqual(o, {})
+
+
+class NameGrammarTest(unittest.TestCase):
+    def test_invalid_names_are_rejected(self):
+        for value in ("app!", "/app", "a:b/c", "app/", "a//b", "-app", "a--", "a..b"):
+            rc, out, o = run_prepare(NAME=value)
+            self.assertEqual(rc, 1, f"{value}: {out}")
+            self.assertEqual(o, {}, value)
+        rc, out, _ = run_prepare(NAME="app!")
+        self.assertIn("letras minúsculas", out)
+
+    def test_default_name_from_dot_github_repo_is_rejected(self):
+        rc, out, _ = run_prepare(GITHUB_REPOSITORY="acme/.github")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("name", out)
+
+    def test_valid_names_are_accepted(self):
+        for value in ("team/my-app", "my.app", "a_b", "a__b", "a--b", "a/b/c"):
+            rc, out, _ = run_prepare(NAME=value)
+            self.assertEqual(rc, 0, f"{value}: {out}")
 
 
 class TagsTest(unittest.TestCase):

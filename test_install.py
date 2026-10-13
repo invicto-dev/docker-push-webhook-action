@@ -20,9 +20,10 @@ case "$1 $2" in
   "repo view")
     case "$*" in
       *isPrivate*) echo "${FAKE_GH_PRIVATE:-true}" ;;
-      *) echo "acme/app" ;;
+      *) echo "${FAKE_GH_REPO:-acme/app}" ;;
     esac ;;
-  "secret set") printf '%s=%s\\n' "$3" "$(cat)" >> "$FAKE_GH_SECRETS" ;;
+  "secret set") [ -n "$FAKE_GH_FAIL_SECRET" ] && { echo "HTTP 403: Resource not accessible" >&2; exit 1; }
+    printf '%s=%s\\n' "$3" "$(cat)" >> "$FAKE_GH_SECRETS" ;;
   api*) echo "${FAKE_GH_PLAN:-free}" ;;
   *) exit 1 ;;
 esac
@@ -160,9 +161,42 @@ class InstallTest(unittest.TestCase):
 
     def test_existing_workflow_is_kept_unless_confirmed(self):
         sb = self.sandbox(existing_workflow="ORIGINAL\n")
-        self.assertEqual(sb.run("n\n"), 0, sb.stdout)
+        self.assertEqual(sb.run("n\n" + answers(push="s")), 0, sb.stdout)
         self.assertEqual(sb.workflow, "ORIGINAL\n")
-        self.assertEqual(sb.recorded_secrets(), {})
+        # secrets are still set (rerunning install.sh must be able to rotate them) but nothing is committed
+        self.assertEqual(sb.recorded_secrets()["REGISTRY_USERNAME"], "ci")
+        self.assertEqual(sb.git("rev-list", "--all", "--count").strip(), "0")
+        self.assertNotIn("commit e push", sb.stdout)
+
+    def test_only_yes_answers_confirm(self):
+        for ans in ("sair", "nao", "no", "x"):
+            sb = self.sandbox(existing_workflow="ORIGINAL\n")
+            self.assertEqual(sb.run(f"{ans}\n" + answers()), 0, sb.stdout)
+            self.assertEqual(sb.workflow, "ORIGINAL\n", ans)
+        for ans in ("s", "S", "sim", "Y", "yes"):
+            sb = self.sandbox(existing_workflow="ORIGINAL\n")
+            self.assertEqual(sb.run(f"{ans}\n" + answers()), 0, sb.stdout)
+            self.assertNotEqual(sb.workflow, "ORIGINAL\n", ans)
+
+    def test_identical_workflow_is_not_committed_again(self):
+        sb = self.sandbox()
+        self.assertEqual(sb.run(answers()), 0, sb.stdout)
+        sb.git("add", "-A")
+        sb.git("commit", "-q", "-m", "init")
+        self.assertEqual(sb.run("s\n" + answers(push="s")), 0, sb.stdout)
+        self.assertIn("workflow sem mudanças", sb.stdout)
+        self.assertEqual(sb.git("rev-list", "--count", "HEAD").strip(), "1")
+
+    def test_failed_secret_set_explains_permissions(self):
+        sb = self.sandbox(env={"FAKE_GH_FAIL_SECRET": "1"})
+        self.assertNotEqual(sb.run(answers()), 0)
+        self.assertIn("Não consegui cadastrar o secret REGISTRY_URL", sb.stdout)
+        self.assertIn("admin", sb.stdout)
+
+    def test_leading_and_trailing_spaces_in_password_are_kept(self):
+        sb = self.sandbox()
+        self.assertEqual(sb.run(answers(password="  secret  ")), 0, sb.stdout)
+        self.assertEqual(sb.recorded_secrets()["REGISTRY_PASSWORD"], "  secret  ")
 
     def test_existing_workflow_can_be_overwritten(self):
         sb = self.sandbox(existing_workflow="ORIGINAL\n")
@@ -193,11 +227,20 @@ class InstallTest(unittest.TestCase):
         self.assertIn("plano gratuito", sb.stdout)
         self.assertEqual(sb.recorded_secrets(), {})
 
+    # Prompt order with --org: [overwrite workflow?] [free plan + private: continue?]
+    # "Continuar?" (every repo in the org) host user password hook [commit and push?]
     def test_org_with_paid_plan_sets_org_secrets(self):
         sb = self.sandbox(env={"FAKE_GH_PLAN": "team", "FAKE_GH_PRIVATE": "true"})
-        self.assertEqual(sb.run(answers(), "--org", "acme"), 0, sb.stdout)
+        self.assertEqual(sb.run("s\n" + answers(), "--org", "acme"), 0, sb.stdout)
         self.assertIn("secret set REGISTRY_URL --org acme", sb.log.read_text())
         self.assertNotIn("--repo", sb.log.read_text())
+
+    def test_org_warns_about_all_repositories_and_can_decline(self):
+        sb = self.sandbox(env={"FAKE_GH_PLAN": "team", "FAKE_GH_PRIVATE": "true"})
+        self.assertEqual(sb.run("n\n" + answers(), "--org", "acme"), 0, sb.stdout)
+        self.assertIn("TODOS os repositórios da organização 'acme'", sb.stdout)
+        self.assertEqual(sb.recorded_secrets(), {})
+        self.assertNotIn("secret set", sb.log.read_text())
 
     def test_commit_contains_only_the_workflow(self):
         sb = self.sandbox()
@@ -217,8 +260,8 @@ class InstallTest(unittest.TestCase):
         self.assertIn("git push", sb.stdout)
         self.assertEqual(sb.git("show", "--name-only", "--format=", "HEAD").split(), [".github/workflows/docker.yml"])
 
-    def matrix_names(self, files, repo_name="repo"):
-        sb = self.sandbox(files=files, repo_name=repo_name)
+    def matrix_names(self, files, repo_name="repo", env=None):
+        sb = self.sandbox(files=files, repo_name=repo_name, env=env)
         self.assertEqual(sb.run(answers()), 0, sb.stdout)
         check_workflow(self, sb.workflow, "workflow com matrix")
         names = re.findall(r"^\s+- name: (.*)$", sb.workflow, re.M)
@@ -237,8 +280,11 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(sorted(names), ["a-b", "a-b-2"])
 
     def test_root_dockerfile_in_repo_named_like_a_folder(self):
-        sb, names = self.matrix_names(("Dockerfile", "front/Dockerfile"), repo_name="front")
+        # the root image is named after the GitHub repo (acme/front), not the local folder
+        _, names = self.matrix_names(("Dockerfile", "front/Dockerfile"), env={"FAKE_GH_REPO": "acme/front"})
         self.assertEqual(sorted(names), ["front", "front-2"])
+        _, names = self.matrix_names(("Dockerfile", "front/Dockerfile"), repo_name="front")  # fake gh: acme/app
+        self.assertEqual(sorted(names), ["app", "front"])
 
     def test_leading_dot_and_uppercase_folders(self):
         _, names = self.matrix_names((".hidden/Dockerfile", "A-B/Dockerfile", "a/b/Dockerfile"))

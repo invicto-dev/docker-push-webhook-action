@@ -25,6 +25,8 @@ Pushes `<registry_url>/<repository name>` with the tags `latest` and the commit 
 
 ### Docker Hub
 
+The image name must include your user (`name: myuser/myapp`); otherwise validation fails.
+
 ```yaml
 - uses: actions/checkout@v4
 - uses: invicto-dev/docker-push-webhook-action@v2
@@ -33,6 +35,27 @@ Pushes `<registry_url>/<repository name>` with the tags `latest` and the commit 
     registry_username: ${{ secrets.REGISTRY_USERNAME }}
     registry_password: ${{ secrets.REGISTRY_PASSWORD }}
     name: myuser/myapp
+```
+
+### GitHub Container Registry
+
+Add `permissions: packages: write` to the job when pushing to GHCR with `GITHUB_TOKEN`.
+
+```yaml
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: invicto-dev/docker-push-webhook-action@v2
+        with:
+          registry_url: ghcr.io
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ github.repository }}
 ```
 
 ### Several images and a deploy webhook

@@ -56,6 +56,10 @@ class DocsConsistencyTest(unittest.TestCase):
     def test_template(self):
         check_workflow(self, (ROOT / "templates/docker.yml").read_text(), "templates/docker.yml")
 
+    def test_docker_login_uses_only_the_registry_host(self):
+        # a REGISTRY_URL with a namespace (docker.io/user) must not reach `docker login`
+        self.assertNotIn("outputs.registry }}", (ROOT / "action.yml").read_text())
+
     def test_markdown_examples(self):
         for name in ("llms.txt", "README.md"):
             blocks = yaml_blocks_using_action((ROOT / name).read_text())

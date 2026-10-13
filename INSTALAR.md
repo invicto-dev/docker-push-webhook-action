@@ -2,7 +2,7 @@
 
 Este guia é para quem **não conhece CI/CD**. Siga os passos na ordem. Leva uns 5 minutos.
 
-Você precisa ter: acesso de escrita ao repositório no GitHub, e saber o endereço, o usuário e a senha (ou token) do registry da empresa.
+Você precisa ter: acesso de **admin** ao repositório no GitHub (cadastrar secrets exige admin; em repositório pessoal, ser o dono), e saber o endereço, o usuário e a senha (ou token) do registry da empresa.
 
 ## Caminho A: pelo navegador (sem instalar nada)
 
@@ -17,7 +17,7 @@ No repositório: **Settings > Secrets and variables > Actions**, aba **Secrets**
 | `REGISTRY_PASSWORD` | senha ou token do registry |
 | `DEPLOY_WEBHOOK_URL` | (opcional) endereço avisado depois do envio, para fazer deploy |
 
-Pode colar o endereço do registry como copiou (com `https://` ou barra no final): a action limpa isso.
+Pode colar o endereço do registry como copiou (com `https://` ou barra no final): a action limpa isso. Para o Docker Hub, use `REGISTRY_URL` = `docker.io` **e** `name: SEU_USUARIO/app` na action (o nome precisa ter o seu usuário).
 
 ### 2. Crie o arquivo do workflow
 
@@ -41,7 +41,7 @@ Em seguida, confira o campo `context` de cada imagem no arquivo criado: se o bui
 
 ## Secrets por repositório ou por organização
 
-Por padrão, os secrets são cadastrados **por repositório** (é o que os dois caminhos acima fazem). Cadastrar uma vez só na **organização** (`bash install.sh --org NOME-DA-ORG`) evita repetir em cada repositório, **mas só funciona em repositórios privados se a organização tiver plano pago**. No plano gratuito, secrets de organização só chegam a repositórios públicos. O script avisa quando detecta essa combinação.
+Por padrão, os secrets são cadastrados **por repositório** (é o que os dois caminhos acima fazem). Cadastrar uma vez só na **organização** (`bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh) --org NOME-DA-ORG`, e é preciso ser owner da organização) evita repetir em cada repositório, **mas só funciona em repositórios privados se a organização tiver plano pago**. No plano gratuito, secrets de organização só chegam a repositórios públicos. O script avisa quando detecta essa combinação.
 
 ## Deu erro? Tabela rápida
 

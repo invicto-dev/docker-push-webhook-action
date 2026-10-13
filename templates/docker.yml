@@ -7,6 +7,8 @@
 #     REGISTRY_URL        -> endereço do registry. Ex: registry.empresa.com
 #     REGISTRY_USERNAME   -> usuário do registry
 #     REGISTRY_PASSWORD   -> senha ou token do registry
+#                            Docker Hub: REGISTRY_URL=docker.io E, no passo 2,
+#                            adicione  name: SEU_USUARIO/app
 #     DEPLOY_WEBHOOK_URL  -> (opcional) endereço avisado após o envio, para
 #                            fazer deploy automático. Sem ele, nada é avisado.
 
