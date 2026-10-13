@@ -92,7 +92,17 @@ set_secret() {
   } >/dev/null || die "Não consegui cadastrar o secret $1. Você precisa ser admin do repositório (ou owner da organização com --org)."
   echo "  secret $1 cadastrado"
 }
-set_secret REGISTRY_URL "$host"
+set_variable() {
+  {
+    if [[ -n "$org" ]]; then
+      gh variable set "$1" --body "$2" --org "$org" --visibility all
+    else
+      gh variable set "$1" --body "$2" --repo "$repo"
+    fi
+  } >/dev/null || die "Não consegui cadastrar a variável $1. Você precisa ser admin do repositório (ou owner da organização com --org)."
+  echo "  variável $1 cadastrada"
+}
+set_variable REGISTRY_URL "$host"
 set_secret REGISTRY_USERNAME "$user"
 set_secret REGISTRY_PASSWORD "$pass"
 if [[ -n "$hook" ]]; then set_secret DEPLOY_WEBHOOK_URL "$hook"; fi
@@ -142,8 +152,9 @@ mkdir -p "$(dirname "$WORKFLOW")"
 {
   cat <<'EOF'
 # Publica (envia) a imagem Docker deste projeto para o registry da empresa.
-# Gerado por install.sh. Os secrets REGISTRY_URL, REGISTRY_USERNAME e
-# REGISTRY_PASSWORD ficam em Settings > Secrets and variables > Actions > Secrets.
+# Gerado por install.sh. REGISTRY_URL fica em Settings > Secrets and variables >
+# Actions > Variables (aceita também Secret); REGISTRY_USERNAME e REGISTRY_PASSWORD
+# ficam na aba Secrets.
 
 name: Docker
 run-name: Publicar imagem Docker
@@ -182,7 +193,7 @@ EOF
       - uses: actions/checkout@v4
       - uses: $ACTION
         with:
-          registry_url: \${{ secrets.REGISTRY_URL }}
+          registry_url: \${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: \${{ secrets.REGISTRY_USERNAME }}
           registry_password: \${{ secrets.REGISTRY_PASSWORD }}
           webhook_url: \${{ secrets.DEPLOY_WEBHOOK_URL }}

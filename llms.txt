@@ -8,16 +8,16 @@ Quem pede ajuda costuma ser leigo em CI/CD. Seja literal: use os nomes exatos ab
 
 Caminho 1 (terminal, recomendado se a pessoa tem `gh` logado): na raiz do repositório, rode `bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)` e deixe a pessoa responder as perguntas (endereço, usuário e senha do registry). Não responda a senha por ela.
 
-Caminho 2 (sem terminal): peça à pessoa para cadastrar os secrets na interface do GitHub e crie o arquivo `.github/workflows/docker.yml` com o conteúdo abaixo.
+Caminho 2 (sem terminal): peça à pessoa para cadastrar a variável e os secrets na interface do GitHub e crie o arquivo `.github/workflows/docker.yml` com o conteúdo abaixo.
 
-## Secrets (cadastrar na aba Secrets, nunca em Variables)
+## Variável e secrets
 
-Cadastro **por repositório** (padrão): Settings > Secrets and variables > Actions > Secrets.
+Cadastro **por repositório** (padrão): Settings > Secrets and variables > Actions. O endereço do registry vai na aba **Variables** (não é segredo; aparece normal nos logs); usuário e senha vão na aba **Secrets**.
 
-- `REGISTRY_URL`: endereço do registry, ex. `registry.empresa.com` (para Docker Hub, `docker.io`; nesse caso o input `name` precisa ser `SEU_USUARIO/app`, senão a action falha)
-- `REGISTRY_USERNAME`: usuário
-- `REGISTRY_PASSWORD`: senha ou token
-- `DEPLOY_WEBHOOK_URL`: opcional
+- `REGISTRY_URL` (Variable; também funciona como Secret): endereço do registry, ex. `registry.empresa.com` (para Docker Hub, `docker.io`; nesse caso o input `name` precisa ser `SEU_USUARIO/app`, senão a action falha)
+- `REGISTRY_USERNAME` (Secret): usuário
+- `REGISTRY_PASSWORD` (Secret): senha ou token
+- `DEPLOY_WEBHOOK_URL` (Secret): opcional
 
 Cadastro por **organização** só funciona em repositórios privados com plano pago; no plano gratuito vale apenas para repositórios públicos. Na dúvida, cadastre por repositório.
 
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: invicto-dev/docker-push-webhook-action@v2
         with:
-          registry_url: ${{ secrets.REGISTRY_URL }}
+          registry_url: ${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
           webhook_url: ${{ secrets.DEPLOY_WEBHOOK_URL }}
@@ -68,8 +68,8 @@ A imagem final é `<registry_url>/<name>:<tag>`. Outputs: `image`, `tags`, `dige
 
 ## Regras para a IA
 
-- Nunca escreva senha, token ou endereço de registry direto no YAML. Sempre `${{ secrets.NOME }}`.
-- Nunca use `vars.*` (Variables) para `REGISTRY_URL` ou credenciais.
+- Nunca escreva senha, token ou endereço de registry direto no YAML. Usuário, senha e webhook sempre via `${{ secrets.NOME }}`; o endereço via `${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}`.
+- Nunca use `vars.*` (Variables) para usuário, senha ou webhook; só o `REGISTRY_URL` pode vir de Variable.
 - Use sempre `@v2`. Não use `image:` (era da v1; não existe mais). Use `name:`.
 - Não invente inputs além da tabela acima.
 - Não rode `git push` sem a pessoa pedir.
@@ -78,7 +78,8 @@ A imagem final é `<registry_url>/<name>:<tag>`. Outputs: `image`, `tags`, `dige
 
 | Mensagem | Causa | Correção |
 |---|---|---|
-| `O secret REGISTRY_URL está vazio ou não existe` (ou `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`) | Secret não cadastrado, cadastrado como Variable, ou nome diferente | Cadastrar na aba Secrets com o nome exato |
+| `O valor de REGISTRY_URL está vazio ou não existe` | `REGISTRY_URL` não cadastrado ou nome diferente | Cadastrar na aba Variables (ou Secrets) com o nome exato |
+| `O secret REGISTRY_USERNAME está vazio ou não existe` (ou `REGISTRY_PASSWORD`) | Secret não cadastrado, cadastrado como Variable, ou nome diferente | Cadastrar na aba Secrets com o nome exato |
 | `unauthorized: incorrect username or password` | Credenciais erradas | Testar com `docker login <endereço>` e recadastrar |
 | `Dockerfile não encontrado: ...` | Caminho errado | Ajustar `context` / `dockerfile_path` |
 | `COPY failed: file not found` | `context` errado | Usar `context: .` |
