@@ -73,6 +73,7 @@ jobs:
           registry_username: test
           registry_password: test-pass
           image: localhost:5000/e2e
+          dockerfile_path: test
           tags: bad tag!
 
       - name: Assert invalid tag fails
