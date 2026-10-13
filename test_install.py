@@ -24,6 +24,7 @@ case "$1 $2" in
     esac ;;
   "secret set") [ -n "$FAKE_GH_FAIL_SECRET" ] && { echo "HTTP 403: Resource not accessible" >&2; exit 1; }
     printf '%s=%s\\n' "$3" "$(cat)" >> "$FAKE_GH_SECRETS" ;;
+  "variable set") printf '%s=%s\\n' "$3" "$5" >> "$FAKE_GH_VARS" ;;
   api*) echo "${FAKE_GH_PLAN:-free}" ;;
   *) exit 1 ;;
 esac
@@ -46,6 +47,8 @@ class Sandbox:
         self.secrets = self.tmp / "secrets"
         self.log.touch()
         self.secrets.touch()
+        self.variables = self.tmp / "variables"
+        self.variables.touch()
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
         for name in files:
             path = self.repo / name
@@ -60,6 +63,7 @@ class Sandbox:
             "HOME": str(self.tmp),
             "FAKE_GH_LOG": str(self.log),
             "FAKE_GH_SECRETS": str(self.secrets),
+            "FAKE_GH_VARS": str(self.variables),
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@example.com",
             "GIT_COMMITTER_NAME": "t",
@@ -98,6 +102,9 @@ class Sandbox:
     def workflow(self):
         return (self.repo / ".github/workflows/docker.yml").read_text()
 
+    def recorded_variables(self):
+        return dict(l.split("=", 1) for l in self.variables.read_text().splitlines())
+
     def recorded_secrets(self):
         return dict(l.split("=", 1) for l in self.secrets.read_text().splitlines())
 
@@ -120,10 +127,10 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(sb.run(answers()), 0, sb.stdout)
         check_workflow(self, sb.workflow, "workflow gerado")
         self.assertNotIn("matrix", sb.workflow)
+        self.assertEqual(sb.recorded_variables(), {"REGISTRY_URL": "registry.acme.com"})
         self.assertEqual(
             sb.recorded_secrets(),
             {
-                "REGISTRY_URL": "registry.acme.com",
                 "REGISTRY_USERNAME": "ci",
                 "REGISTRY_PASSWORD": PASSWORD,
             },
@@ -190,7 +197,7 @@ class InstallTest(unittest.TestCase):
     def test_failed_secret_set_explains_permissions(self):
         sb = self.sandbox(env={"FAKE_GH_FAIL_SECRET": "1"})
         self.assertNotEqual(sb.run(answers()), 0)
-        self.assertIn("Não consegui cadastrar o secret REGISTRY_URL", sb.stdout)
+        self.assertIn("Não consegui cadastrar o secret REGISTRY_USERNAME", sb.stdout)
         self.assertIn("admin", sb.stdout)
 
     def test_leading_and_trailing_spaces_in_password_are_kept(self):
@@ -232,7 +239,8 @@ class InstallTest(unittest.TestCase):
     def test_org_with_paid_plan_sets_org_secrets(self):
         sb = self.sandbox(env={"FAKE_GH_PLAN": "team", "FAKE_GH_PRIVATE": "true"})
         self.assertEqual(sb.run("s\n" + answers(), "--org", "acme"), 0, sb.stdout)
-        self.assertIn("secret set REGISTRY_URL --org acme", sb.log.read_text())
+        self.assertIn("variable set REGISTRY_URL --body registry.acme.com --org acme", sb.log.read_text())
+        self.assertIn("secret set REGISTRY_USERNAME --org acme", sb.log.read_text())
         self.assertNotIn("--repo", sb.log.read_text())
 
     def test_org_warns_about_all_repositories_and_can_decline(self):

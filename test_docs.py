@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 ACTION_REF = "docker-push-webhook-action@v2"
+REGISTRY_URL_EXPR = "${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}"
 SECRETS = {
     "REGISTRY_URL",
     "REGISTRY_USERNAME",
@@ -44,7 +45,14 @@ def check_workflow(test, text, where):
     secrets = set(re.findall(r"secrets\.([A-Z_]+)", text))
     test.assertFalse(secrets - SECRETS, f"{where}: secrets desconhecidos: {secrets - SECRETS}")
     test.assertIn(ACTION_REF, text, where)
-    test.assertNotIn("vars.", text, f"{where}: credenciais/endereço não devem vir de vars.*")
+    variables = set(re.findall(r"vars\.([A-Z_]+)", text))
+    test.assertFalse(variables - {"REGISTRY_URL"}, f"{where}: só REGISTRY_URL pode vir de vars.*: {variables}")
+    # a literal host (docker.io) is fine; a secret/variable reference must read both places
+    value = re.search(r"^\s*registry_url:\s*(.+?)\s*$", text, re.M).group(1)
+    test.assertTrue(
+        value == REGISTRY_URL_EXPR or not value.startswith("${{"),
+        f"{where}: registry_url deve aceitar Variable ou Secret, achei: {value}",
+    )
 
 
 def yaml_blocks_using_action(markdown):

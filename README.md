@@ -16,12 +16,14 @@ A Linux runner with Docker and Python 3, such as `ubuntu-latest`. GitHub-hosted 
 - uses: actions/checkout@v4
 - uses: invicto-dev/docker-push-webhook-action@v2
   with:
-    registry_url: ${{ secrets.REGISTRY_URL }}
+    registry_url: ${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
     registry_username: ${{ secrets.REGISTRY_USERNAME }}
     registry_password: ${{ secrets.REGISTRY_PASSWORD }}
 ```
 
 Pushes `<registry_url>/<repository name>` with the tags `latest` and the commit SHA.
+
+`REGISTRY_URL` is not a secret: store it as a repository **Variable** so the registry host shows up in logs and in the job summary (a Secret works too, but GitHub masks it as `***`). The `vars.REGISTRY_URL || secrets.REGISTRY_URL` expression accepts either. Keep the username and password as Secrets.
 
 ### Docker Hub
 
@@ -77,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: invicto-dev/docker-push-webhook-action@v2
         with:
-          registry_url: ${{ secrets.REGISTRY_URL }}
+          registry_url: ${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
           name: ${{ matrix.name }}

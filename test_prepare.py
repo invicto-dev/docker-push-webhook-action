@@ -119,6 +119,17 @@ class RegistryTest(unittest.TestCase):
             self.assertIn("está vazio ou não existe", out)
             self.assertEqual(o, {})
 
+    def test_empty_registry_message_accepts_a_variable(self):
+        rc, out, _ = run_prepare(REGISTRY_URL="")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("Variables", out)
+        self.assertIn("Secrets", out)
+
+    def test_empty_credentials_message_still_says_secrets(self):
+        rc, out, _ = run_prepare(REGISTRY_USERNAME="")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("aba Secrets", out)
+
     def test_scheme_only_registry_is_rejected(self):
         rc, out, _ = run_prepare(REGISTRY_URL="https://")
         self.assertEqual(rc, 1, out)

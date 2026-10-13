@@ -1,10 +1,14 @@
 # Este arquivo publica (envia) a imagem Docker do projeto para o registry da empresa.
 #
-# ANTES DE USAR, cadastre estes secrets neste repositório, em:
-#   Settings > Secrets and variables > Actions > aba "Secrets"
-#   (cadastre como SECRET, não como Variable, e use os nomes exatos)
+# ANTES DE USAR, cadastre neste repositório, em:
+#   Settings > Secrets and variables > Actions
+#   (use os nomes exatos)
 #
+#   Aba "Variables" (aparece normal nos logs e no resumo):
 #     REGISTRY_URL        -> endereço do registry. Ex: registry.empresa.com
+#                            (se preferir, pode ser um Secret; funciona igual)
+#
+#   Aba "Secrets" (fica escondido):
 #     REGISTRY_USERNAME   -> usuário do registry
 #     REGISTRY_PASSWORD   -> senha ou token do registry
 #                            Docker Hub: REGISTRY_URL=docker.io E, no passo 2,
@@ -50,7 +54,7 @@ jobs:
       # código do commit. Para mudar o nome: adicione  name: meu-app
       - uses: invicto-dev/docker-push-webhook-action@v2
         with:
-          registry_url: ${{ secrets.REGISTRY_URL }}
+          registry_url: ${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
           webhook_url: ${{ secrets.DEPLOY_WEBHOOK_URL }}

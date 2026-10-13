@@ -12,7 +12,9 @@ missing_secret() {
   fail "O secret $1 está vazio ou não existe. Cadastre em Settings > Secrets and variables > Actions, na aba Secrets (não em Variables), com esse nome exato. Se você usou outro nome de secret, ajuste o workflow."
 }
 
-if [[ -z "${REGISTRY_URL//[[:space:]]/}" ]]; then missing_secret REGISTRY_URL; fi
+if [[ -z "${REGISTRY_URL//[[:space:]]/}" ]]; then
+  fail "O valor de REGISTRY_URL está vazio ou não existe. Cadastre em Settings > Secrets and variables > Actions, preferencialmente na aba Variables (o endereço do registry não é segredo), ou na aba Secrets, com esse nome exato. Se você usou outro nome, ajuste o workflow."
+fi
 if [[ -z "$REGISTRY_USERNAME" ]]; then missing_secret REGISTRY_USERNAME; fi
 if [[ -z "$REGISTRY_PASSWORD" ]]; then missing_secret REGISTRY_PASSWORD; fi
 
