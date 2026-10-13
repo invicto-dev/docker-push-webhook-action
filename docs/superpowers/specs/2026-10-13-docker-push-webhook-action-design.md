@@ -1,7 +1,7 @@
 # Design Doc: Docker Push & Webhook (GitHub Action)
 
 - **Data:** 13 de Outubro de 2026
-- **Status:** Em revisão
+- **Status:** Aprovado
 - **Escopo:** repositório novo `docker-push-webhook-action`
 
 ---
