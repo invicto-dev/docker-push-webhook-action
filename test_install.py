@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -31,9 +32,9 @@ PASSWORD = "p@ss \"w$rd'!"
 
 
 class Sandbox:
-    def __init__(self, files=("Dockerfile",), existing_workflow=None, env=None):
+    def __init__(self, files=("Dockerfile",), existing_workflow=None, env=None, repo_name="repo"):
         self.tmp = Path(tempfile.mkdtemp())
-        self.repo = self.tmp / "repo"
+        self.repo = self.tmp / repo_name
         self.repo.mkdir()
         bin_dir = self.tmp / "bin"
         bin_dir.mkdir()
@@ -58,6 +59,10 @@ class Sandbox:
             "HOME": str(self.tmp),
             "FAKE_GH_LOG": str(self.log),
             "FAKE_GH_SECRETS": str(self.secrets),
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@example.com",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@example.com",
         }
         self.env.update(env or {})
 
@@ -72,6 +77,21 @@ class Sandbox:
         )
         self.stdout = proc.stdout + proc.stderr
         return proc.returncode
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", *args], cwd=self.repo, env={**os.environ, **self.env},
+            capture_output=True, text=True, check=True,
+        ).stdout
+
+    def with_origin(self):
+        """Local bare repo as origin, with upstream set, so `git push` works."""
+        bare = self.tmp / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        self.git("remote", "add", "origin", str(bare))
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "init")
+        self.git("push", "-q", "-u", "origin", "HEAD")
 
     @property
     def workflow(self):
@@ -178,6 +198,57 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(sb.run(answers(), "--org", "acme"), 0, sb.stdout)
         self.assertIn("secret set REGISTRY_URL --org acme", sb.log.read_text())
         self.assertNotIn("--repo", sb.log.read_text())
+
+    def test_commit_contains_only_the_workflow(self):
+        sb = self.sandbox()
+        sb.with_origin()
+        (sb.repo / "unrelated.txt").write_text("x\n")
+        sb.git("add", "unrelated.txt")
+        self.assertEqual(sb.run(answers(push="s")), 0, sb.stdout)
+        self.assertEqual(sb.git("show", "--name-only", "--format=", "HEAD").split(), [".github/workflows/docker.yml"])
+        self.assertEqual(sb.git("status", "--porcelain").strip(), "A  unrelated.txt")
+
+    def test_failed_push_says_commit_was_made(self):
+        sb = self.sandbox()
+        sb.git("add", "-A")
+        sb.git("commit", "-q", "-m", "init")
+        self.assertNotEqual(sb.run(answers(push="s")), 0)
+        self.assertIn("commit foi feito", sb.stdout)
+        self.assertIn("git push", sb.stdout)
+        self.assertEqual(sb.git("show", "--name-only", "--format=", "HEAD").split(), [".github/workflows/docker.yml"])
+
+    def matrix_names(self, files, repo_name="repo"):
+        sb = self.sandbox(files=files, repo_name=repo_name)
+        self.assertEqual(sb.run(answers()), 0, sb.stdout)
+        check_workflow(self, sb.workflow, "workflow com matrix")
+        names = re.findall(r"^\s+- name: (.*)$", sb.workflow, re.M)
+        self.assertEqual(len(names), len(files), sb.workflow)
+        self.assertEqual(len(set(names)), len(names), names)
+        for n in names:
+            self.assertRegex(n, r"^[a-z0-9]+(-[a-z0-9]+)*$")
+            self.assertNotRegex(n, r"^([0-9].*|true|false|yes|no|on|off|null|y|n)$")
+        if shutil.which("actionlint"):
+            lint = subprocess.run(["actionlint", ".github/workflows/docker.yml"], cwd=sb.repo, capture_output=True, text=True)
+            self.assertEqual(lint.returncode, 0, lint.stdout + lint.stderr)
+        return sb, names
+
+    def test_colliding_slugs_get_unique_names(self):
+        _, names = self.matrix_names(("a/b/Dockerfile", "a-b/Dockerfile"))
+        self.assertEqual(sorted(names), ["a-b", "a-b-2"])
+
+    def test_root_dockerfile_in_repo_named_like_a_folder(self):
+        sb, names = self.matrix_names(("Dockerfile", "front/Dockerfile"), repo_name="front")
+        self.assertEqual(sorted(names), ["front", "front-2"])
+
+    def test_leading_dot_and_uppercase_folders(self):
+        _, names = self.matrix_names((".hidden/Dockerfile", "A-B/Dockerfile", "a/b/Dockerfile"))
+        self.assertEqual(sorted(names), ["a-b", "a-b-2", "hidden"])
+
+    def test_names_that_yaml_would_not_read_as_text(self):
+        sb, names = self.matrix_names(("true/Dockerfile", "1.0/Dockerfile", "null/Dockerfile"))
+        self.assertEqual(sorted(names), ["img-1-0", "img-null", "img-true"])
+        self.assertIn("context: ./true", sb.workflow)
+        self.assertIn("context: ./1.0", sb.workflow)
 
     @unittest.skipUnless(shutil.which("actionlint"), "actionlint não instalado")
     def test_generated_workflows_pass_actionlint(self):

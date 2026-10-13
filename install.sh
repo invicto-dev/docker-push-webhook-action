@@ -89,8 +89,40 @@ set_secret REGISTRY_PASSWORD "$pass"
 if [[ -n "$hook" ]]; then set_secret DEPLOY_WEBHOOK_URL "$hook"; fi
 
 # Image name from the Dockerfile folder: "config/docker" -> "config-docker".
-slug() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-'; }
+# Always a valid Docker name (lowercase letters, digits, single dashes, starting
+# with a letter/digit) that YAML reads as a string; "image" when nothing is left.
+slug() {
+  local s
+  s="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | tr -s '-')"
+  s="${s#-}"
+  s="${s%-}"
+  [[ -n "$s" ]] || s="image"
+  # YAML would read these as number/boolean/null, not text.
+  case "$s" in
+    [0-9]*|true|false|yes|no|on|off|null|y|n) s="img-$s" ;;
+  esac
+  printf '%s' "$s"
+}
+# Same for a context path: "./" keeps keyword-like folders (true, null, 1.0) as text.
+yaml_path() {
+  case "$1" in
+    [0-9]*|true|false|yes|no|on|off|null|y|n|True|False|Null|TRUE|FALSE|NULL|Yes|No|YES|NO|On|Off|ON|OFF|~) printf './%s' "$1" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 dir_of() { local d; d="$(dirname "$1")"; printf '%s' "$d"; }
+# Unique image names across the matrix: a, a-2, a-3 ... (plain delimited string, Bash 3.2).
+# Sets $img (no subshell, so $used persists).
+used=" "
+unique_name() {
+  local base="$1" n=2
+  img="$base"
+  while [[ "$used" == *" $img "* ]]; do
+    img="$base-$n"
+    n=$((n + 1))
+  done
+  used="$used$img "
+}
 
 mkdir -p "$(dirname "$WORKFLOW")"
 {
@@ -120,11 +152,11 @@ EOF
     for f in "${dockerfiles[@]}"; do
       d="$(dir_of "$f")"
       if [[ "$d" == "." ]]; then
-        img="$(slug "$(basename "$root")")"
+        unique_name "$(slug "$(basename "$root")")"
         ctx="."
       else
-        img="$(slug "$d")"
-        ctx="$d"
+        unique_name "$(slug "$d")"
+        ctx="$(yaml_path "$d")"
       fi
       echo "          - name: $img"
       echo "            context: $ctx   # se o build não achar arquivos, troque por ."
@@ -148,7 +180,7 @@ EOF
   else
     d="$(dir_of "${dockerfiles[0]}")"
     if [[ "$d" != "." ]]; then
-      echo "          context: $d   # se o build não achar arquivos, troque por ."
+      echo "          context: $(yaml_path "$d")   # se o build não achar arquivos, troque por ."
       echo "          dockerfile_path: ${dockerfiles[0]}"
     fi
   fi
@@ -159,8 +191,14 @@ echo "Pronto: $WORKFLOW criado."
 echo "Confira o campo 'context' de cada imagem no arquivo: se o build falhar procurando arquivos, troque por '.'."
 if confirm "Fazer commit e push agora?"; then
   git add "$WORKFLOW"
-  git commit -m "ci: add docker build and push workflow"
-  git push
+  # Só o workflow entra no commit: outros arquivos já preparados (staged) ficam de fora.
+  git commit -m "ci: add docker build and push workflow" -- "$WORKFLOW" ||
+    die "Não consegui fazer o commit. Rode você mesmo: git add $WORKFLOW && git commit -m 'ci: add docker workflow' -- $WORKFLOW && git push"
+  git push || {
+    echo "AVISO: o commit foi feito, mas o push falhou (sem remote, sem permissão ou sem internet?)." >&2
+    echo "Quando resolver, envie com: git push" >&2
+    exit 1
+  }
 else
   echo "Quando quiser: git add $WORKFLOW && git commit -m 'ci: add docker workflow' && git push"
 fi
