@@ -187,6 +187,16 @@ runs:
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
 
+    - name: Call webhook
+      if: inputs.webhook_url != ''
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_HEADERS: ${{ inputs.webhook_headers }}
+        WEBHOOK_PAYLOAD: ${{ inputs.webhook_payload }}
+        WEBHOOK_FAIL_ON_ERROR: ${{ inputs.webhook_fail_on_error }}
+      run: python3 -I "$GITHUB_ACTION_PATH/webhook.py"
+
     - name: Clean up credentials
       if: always() && steps.prepare.outputs.docker_config != ''
       shell: bash
