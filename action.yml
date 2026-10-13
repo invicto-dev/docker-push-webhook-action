@@ -88,6 +88,11 @@ runs:
           echo "::error::Inputs 'image', 'registry_username' and 'registry_password' are required."
           exit 1
         fi
+        # Values below end up in GITHUB_OUTPUT; a line break would inject extra outputs.
+        if [[ "$IMAGE" =~ [[:space:][:cntrl:]] ]]; then
+          echo "::error::'image' must not contain whitespace or control characters."
+          exit 1
+        fi
         if [[ "${IMAGE##*/}" == *[:@]* ]]; then
           echo "::error::'image' must not include a tag or digest; use the 'tags' input."
           exit 1
@@ -95,6 +100,10 @@ runs:
         dockerfile="${DOCKERFILE_PATH:-$BUILD_CONTEXT}"
         if [[ -d "$dockerfile" ]]; then
           dockerfile="${dockerfile%/}/Dockerfile"
+        fi
+        if [[ "$dockerfile" == *[$'\r\n']* ]]; then
+          echo "::error::'dockerfile_path' and 'context' must not contain line breaks."
+          exit 1
         fi
         if [[ ! -f "$dockerfile" ]]; then
           echo "::error::Dockerfile not found: $dockerfile"
