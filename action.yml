@@ -7,22 +7,22 @@ branding:
 
 inputs:
   registry_url:
-    description: Registry host (e.g. ghcr.io). Empty means Docker Hub.
-    required: false
-    default: ''
+    description: Registry host (e.g. registry.example.com, ghcr.io, docker.io). Scheme and trailing slash are removed automatically.
+    required: true
   registry_username:
     description: Registry username.
     required: true
   registry_password:
     description: Registry password or token. Sent via stdin, never as a command argument.
     required: true
-  image:
-    description: Full image name without tag (e.g. ghcr.io/org/app).
-    required: true
-  tags:
-    description: Tags separated by commas and/or newlines.
+  name:
+    description: Short image name, without registry or tag (e.g. my-app or team/my-app). Defaults to the repository name. Lowercased automatically.
     required: false
-    default: latest
+    default: ''
+  tags:
+    description: Tags separated by commas and/or newlines. Empty means "latest" plus the commit SHA.
+    required: false
+    default: ''
   context:
     description: Build context.
     required: false
@@ -70,72 +70,28 @@ runs:
       id: prepare
       shell: bash
       env:
-        IMAGE: ${{ inputs.image }}
+        REGISTRY_URL: ${{ inputs.registry_url }}
+        REGISTRY_USERNAME: ${{ inputs.registry_username }}
+        REGISTRY_PASSWORD: ${{ inputs.registry_password }}
+        NAME: ${{ inputs.name }}
         TAGS: ${{ inputs.tags }}
         BUILD_CONTEXT: ${{ inputs.context }}
         DOCKERFILE_PATH: ${{ inputs.dockerfile_path }}
-        REGISTRY_USERNAME: ${{ inputs.registry_username }}
-        REGISTRY_PASSWORD: ${{ inputs.registry_password }}
       run: |
         set -euo pipefail
         for bin in docker python3; do
           if ! command -v "$bin" >/dev/null; then
-            echo "::error::'$bin' not found. Use a Linux runner with Docker (e.g. ubuntu-latest)."
+            echo "::error::'$bin' não encontrado. Use um runner Linux com Docker (por exemplo, ubuntu-latest)."
             exit 1
           fi
         done
-        if [[ -z "$IMAGE" || -z "$REGISTRY_USERNAME" || -z "$REGISTRY_PASSWORD" ]]; then
-          echo "::error::Inputs 'image', 'registry_username' and 'registry_password' are required."
-          exit 1
-        fi
-        # Values below end up in GITHUB_OUTPUT; a line break would inject extra outputs.
-        if [[ "$IMAGE" =~ [[:space:][:cntrl:]] ]]; then
-          echo "::error::'image' must not contain whitespace or control characters."
-          exit 1
-        fi
-        if [[ "${IMAGE##*/}" == *[:@]* ]]; then
-          echo "::error::'image' must not include a tag or digest; use the 'tags' input."
-          exit 1
-        fi
-        dockerfile="${DOCKERFILE_PATH:-$BUILD_CONTEXT}"
-        if [[ -d "$dockerfile" ]]; then
-          dockerfile="${dockerfile%/}/Dockerfile"
-        fi
-        if [[ "$dockerfile" == *[$'\r\n']* ]]; then
-          echo "::error::'dockerfile_path' and 'context' must not contain line breaks."
-          exit 1
-        fi
-        if [[ ! -f "$dockerfile" ]]; then
-          echo "::error::Dockerfile not found: $dockerfile"
-          exit 1
-        fi
-        refs=()
-        while read -r tag; do
-          if [[ -z "$tag" ]]; then continue; fi
-          if [[ ! "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-            echo "::error::Invalid tag: '$tag'"
-            exit 1
-          fi
-          refs+=("$IMAGE:$tag")
-        done < <(printf '%s\n' "$TAGS" | tr ',' '\n')
-        if (( ${#refs[@]} == 0 )); then
-          echo "::error::No tags given."
-          exit 1
-        fi
-        docker_config="$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config.XXXXXX")"
-        {
-          echo "dockerfile=$dockerfile"
-          echo "docker_config=$docker_config"
-          echo "refs<<EOF"
-          printf '%s\n' "${refs[@]}"
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
+        bash "$GITHUB_ACTION_PATH/prepare.sh"
 
     - name: Log in to registry
       shell: bash
       env:
         DOCKER_CONFIG: ${{ steps.prepare.outputs.docker_config }}
-        REGISTRY_URL: ${{ inputs.registry_url }}
+        REGISTRY: ${{ steps.prepare.outputs.registry_host }}
         REGISTRY_USERNAME: ${{ inputs.registry_username }}
         REGISTRY_PASSWORD: ${{ inputs.registry_password }}
       run: |
@@ -143,9 +99,7 @@ runs:
         while IFS= read -r line; do
           if [[ -n "$line" ]]; then echo "::add-mask::$line"; fi
         done <<< "$REGISTRY_PASSWORD"
-        registry=()
-        if [[ -n "$REGISTRY_URL" ]]; then registry=("$REGISTRY_URL"); fi
-        printf '%s' "$REGISTRY_PASSWORD" | docker login "${registry[@]}" -u "$REGISTRY_USERNAME" --password-stdin
+        printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
 
     - name: Build image
       shell: bash
@@ -164,7 +118,7 @@ runs:
         while IFS= read -r arg; do
           if [[ -z "${arg//[[:space:]]/}" ]]; then continue; fi
           if [[ "$arg" != *=* ]]; then
-            echo "::error::build_args: every line must be KEY=VALUE."
+            echo "::error::build_args: cada linha deve ser CHAVE=VALOR."
             exit 1
           fi
           args+=(--build-arg "$arg")
@@ -186,7 +140,7 @@ runs:
           if [[ "$out" =~ $digest_re ]]; then digest="${BASH_REMATCH[1]}"; fi
         done <<< "$REFS"
         if [[ -z "$digest" ]]; then
-          echo "::warning::Could not read the image digest from the 'docker push' output."
+          echo "::warning::Não consegui ler o digest da saída do 'docker push'."
         fi
         {
           echo "image=${REFS%%$'\n'*}"
@@ -195,6 +149,15 @@ runs:
           echo "$REFS"
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+          {
+            echo "### Imagem publicada"
+            echo
+            while read -r ref; do echo "- \`$ref\`"; done <<< "$REFS"
+            echo
+            echo "Digest: \`${digest:-indisponível}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
 
     - name: Call webhook
       if: inputs.webhook_url != ''
@@ -211,10 +174,8 @@ runs:
       shell: bash
       env:
         DOCKER_CONFIG: ${{ steps.prepare.outputs.docker_config }}
-        REGISTRY_URL: ${{ inputs.registry_url }}
+        REGISTRY: ${{ steps.prepare.outputs.registry_host }}
       run: |
         set -uo pipefail
-        registry=()
-        if [[ -n "$REGISTRY_URL" ]]; then registry=("$REGISTRY_URL"); fi
-        docker logout "${registry[@]}" || true
+        docker logout "$REGISTRY" || true
         rm -rf "$DOCKER_CONFIG"
