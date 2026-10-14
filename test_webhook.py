@@ -268,6 +268,71 @@ class WebhookTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(self.server.received[0][1])["commit_message"], "feat: ação")
 
+    def test_teams_url_gets_an_adaptive_card(self):
+        sha = make_commit(self.tmp.name, 'feat: "aspas" e ação 🚀\n\ncorpo', "Ana Souza")
+        version = self.RUN_ENV["WEBHOOK_VERSION"]
+        env = dict(self.RUN_ENV, GITHUB_SHA=sha, WEBHOOK_TEAMS_URL=self.url(200),
+                   WEBHOOK_REFS=f"registry.example.com/app:latest\nregistry.example.com/app:{version}")
+        result = self.run_webhook(url="\n", headers='{"X-Token": "s3cr3t"}', env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Teams 1/1: HTTP 200", result.stdout)
+        headers, body = self.server.received[0]
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertIsNone(headers.get("X-Token"), "webhook_headers must not go to Teams")
+        message = json.loads(body.decode("utf-8"))
+        self.assertEqual(message["type"], "message")
+        attachment = message["attachments"][0]
+        self.assertEqual(attachment["contentType"], "application/vnd.microsoft.card.adaptive")
+        card = attachment["content"]
+        self.assertEqual((card["type"], card["version"]), ("AdaptiveCard", "1.4"))
+        self.assertEqual(card["body"][0]["text"], "Imagem publicada: app")
+        facts = {f["title"]: f["value"] for f in card["body"][1]["facts"]}
+        self.assertEqual(facts, {
+            "Versão (rollback)": f"{version} (horário UTC)",
+            "Imagem": f"registry.example.com/app:{version}",
+            "Commit": f'{sha[:7]}: feat: "aspas" e ação 🚀',
+            "Autor": "Ana Souza",
+            "Repositório": "acme/app",
+        })
+        self.assertEqual(card["actions"], [{
+            "type": "Action.OpenUrl", "title": "Ver execução no GitHub",
+            "url": "https://github.com/acme/app/actions/runs/42",
+        }])
+
+    def test_card_without_version_shows_the_first_tag(self):
+        env = dict(self.RUN_ENV, WEBHOOK_VERSION="", GITHUB_SHA="0" * 40,
+                   WEBHOOK_TEAMS_URL=self.url(200), WEBHOOK_REFS="registry.example.com/app:v1")
+        self.run_webhook(url="\n", env=env)
+        card = json.loads(self.server.received[0][1])["attachments"][0]["content"]
+        facts = {f["title"]: f["value"] for f in card["body"][1]["facts"]}
+        self.assertNotIn("Versão (rollback)", facts)
+        self.assertNotIn("Autor", facts)
+        self.assertEqual(facts["Imagem"], "registry.example.com/app:v1")
+
+    def test_teams_and_json_destinations_get_their_own_format(self):
+        env = dict(self.RUN_ENV, WEBHOOK_TEAMS_URL=self.url(201))
+        result = self.run_webhook(url=self.url(200), env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.server.paths, ["/200", "/201"])
+        self.assertIn("repository", json.loads(self.server.received[0][1]))
+        self.assertIn("attachments", json.loads(self.server.received[1][1]))
+        self.assertIn("Webhook 1/1: HTTP 200", result.stdout)
+        self.assertIn("Teams 1/1: HTTP 201", result.stdout)
+
+    def test_a_failing_teams_destination_does_not_stop_the_others(self):
+        env = dict(self.RUN_ENV, WEBHOOK_TEAMS_URL=f"{self.url(500)}\n{self.url(200)}")
+        result = self.run_webhook(url="\n", env=env)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.server.paths, ["/500", "/200"])
+        self.assertIn("::error::Teams 1/2 falhou: HTTP 500", result.stdout)
+        self.assertIn("Teams 2/2: HTTP 200", result.stdout)
+
+    def test_invalid_teams_url_sends_nothing(self):
+        env = dict(self.RUN_ENV, WEBHOOK_TEAMS_URL="ftp://127.0.0.1/200")
+        result = self.run_webhook(url=self.url(200), env=env, fail_on_error="false")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.server.received, [])
+
     def test_urls_with_placeholders_are_never_logged(self):
         urls = f"{self.url(500)}?token=topsecret\n{self.url(200)}?tag={{version}}&token=topsecret"
         result = self.run_webhook(url=urls, env={"WEBHOOK_VERSION": "v1"})

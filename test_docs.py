@@ -85,6 +85,14 @@ class DocsConsistencyTest(unittest.TestCase):
             for message in SHARED_MESSAGES + DOC_ERRORS:
                 self.assertIn(message, text, f"{name} não explica o erro: {message}")
 
+    def test_docs_send_teams_through_teams_webhook_url(self):
+        template = (ROOT / "templates/docker.yml").read_text()
+        self.assertIn("teams_webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}", template)
+        self.assertNotIn("secrets.TEAMS_WEBHOOK_URL }}\n            ${{", template, "Teams must not be a webhook_url line")
+        # INSTALAR.md only talks about the secret; the template carries the input name
+        for name in ("README.md", "llms.txt", "install.sh"):
+            self.assertIn("teams_webhook_url", (ROOT / name).read_text(), name)
+
     def test_docs_use_one_name_for_the_teams_webhook(self):
         for name in ("README.md", "llms.txt", "INSTALAR.md", "templates/docker.yml", "install.sh"):
             text = (ROOT / name).read_text()

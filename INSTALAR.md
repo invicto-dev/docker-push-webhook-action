@@ -22,7 +22,7 @@ Na aba **Secrets** (botão **New repository secret**). Ficam escondidos:
 |---|---|
 | `REGISTRY_USERNAME` | usuário do registry |
 | `REGISTRY_PASSWORD` | senha ou token do registry |
-| `TEAMS_WEBHOOK_URL` | (opcional) endereço do fluxo do Power Automate que avisa no Teams depois do envio |
+| `TEAMS_WEBHOOK_URL` | (opcional) link do webhook do Teams que avisa no canal depois do envio (veja "Avisar o Teams e o Portainer") |
 | `PORTAINER_WEBHOOK_URL` | (opcional) webhook do Portainer para deploy automático. Para subir a versão exata, termine a URL com `?tag={version}` |
 
 Se você cadastrar o `REGISTRY_URL` como Secret em vez de Variable, também funciona. A diferença é que o GitHub esconde o endereço (`***`) nos logs e no resumo.
@@ -51,9 +51,15 @@ Em seguida, confira o campo `context` de cada imagem no arquivo criado: se o bui
 
 ## Avisar o Teams e o Portainer
 
-Depois de cada envio, a action avisa cada endereço cadastrado em `TEAMS_WEBHOOK_URL` (o fluxo do Power Automate que posta no Teams) e em `PORTAINER_WEBHOOK_URL` (deploy automático). Quem não estiver cadastrado é simplesmente pulado, então dá para criar o do Portainer depois, sem mexer no workflow.
+Depois de cada envio, a action avisa o canal do Teams cadastrado em `TEAMS_WEBHOOK_URL` e o endereço cadastrado em `PORTAINER_WEBHOOK_URL` (deploy automático). Quem não estiver cadastrado é simplesmente pulado, então dá para criar o do Portainer depois, sem mexer no workflow.
 
-Cada aviso leva a versão (`2026.10.14-1532Z-c14ae67`), o commit, quem fez, a mensagem do commit e o link da execução. No Power Automate, use esses campos para montar a mensagem do Teams (o README tem o esquema JSON para o gatilho).
+**Criar o webhook do Teams:**
+
+1. No Teams, abra o app **Fluxos de trabalho** (Workflows).
+2. Escolha o modelo **"Postar em um canal quando uma solicitação de webhook for recebida"**, selecione a equipe e o canal e conclua.
+3. Clique em **Copiar link do webhook** e cadastre o link como secret `TEAMS_WEBHOOK_URL`.
+
+A action manda para o canal um cartão pronto com a versão para rollback (`2026.10.14-1532Z-c14ae67`, horário UTC), a imagem, o commit e a mensagem, quem fez e um botão para abrir a execução no GitHub. Não precisa mexer no fluxo.
 
 ## Voltar para uma versão anterior (rollback)
 

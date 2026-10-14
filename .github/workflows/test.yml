@@ -164,6 +164,7 @@ jobs:
             http://127.0.0.1:8080/a?tag={version}
 
             http://127.0.0.1:8080/b
+          teams_webhook_url: http://127.0.0.1:8080/teams
 
       - id: uppercase_name
         uses: ./
@@ -219,5 +220,13 @@ jobs:
           assert body["commit_message"], body
           assert body["author"], body
           assert body["run_url"].endswith("/actions/runs/" + os.environ["RUN_ID"]), body
+          teams = json.load(open(f"{tmp}/webhook-teams.json"))
+          message = json.loads(teams["body"])
+          card = message["attachments"][0]["content"]
+          assert message["type"] == "message", message
+          assert card["type"] == "AdaptiveCard", card
+          facts = {f["title"]: f["value"] for f in card["body"][1]["facts"]}
+          assert facts["Versão (rollback)"] == os.environ["VERSION"] + " (horário UTC)", facts
+          assert card["actions"][0]["url"] == body["run_url"], card
           PY
           docker pull localhost:5000/e2e-upper:v1

@@ -17,7 +17,7 @@ Cadastro **por repositório** (padrão): Settings > Secrets and variables > Acti
 - `REGISTRY_URL` (Variable; também funciona como Secret): endereço do registry, ex. `registry.empresa.com` (para Docker Hub, `docker.io`; nesse caso o input `name` precisa ser `SEU_USUARIO/app`, senão a action falha)
 - `REGISTRY_USERNAME` (Secret): usuário
 - `REGISTRY_PASSWORD` (Secret): senha ou token
-- `TEAMS_WEBHOOK_URL` (Secret): opcional; fluxo do Power Automate que avisa no Teams
+- `TEAMS_WEBHOOK_URL` (Secret): opcional; link do webhook do Teams (app Fluxos de trabalho, modelo "Postar em um canal quando uma solicitação de webhook for recebida"). Vai em `teams_webhook_url`, nunca em `webhook_url`
 - `PORTAINER_WEBHOOK_URL` (Secret): opcional; webhook do Portainer para deploy automático. Para a versão exata, termine com `?tag={version}`
 
 Cadastro por **organização** só funciona em repositórios privados com plano pago; no plano gratuito vale apenas para repositórios públicos. Na dúvida, cadastre por repositório.
@@ -43,9 +43,8 @@ jobs:
           registry_url: ${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
-          webhook_url: |
-            ${{ secrets.TEAMS_WEBHOOK_URL }}
-            ${{ secrets.PORTAINER_WEBHOOK_URL }}
+          teams_webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          webhook_url: ${{ secrets.PORTAINER_WEBHOOK_URL }}
 ```
 
 Para vários Dockerfiles, use `strategy.matrix.include` com `name`, `context` e `dockerfile`, e passe `name: ${{ matrix.name }}`, `context: ${{ matrix.context }}`, `dockerfile_path: ${{ matrix.dockerfile }}` à action. Modelo completo em `templates/docker.yml`.
@@ -63,6 +62,7 @@ Para vários Dockerfiles, use `strategy.matrix.include` com `name`, `context` e 
 | `dockerfile_path` | não | `<context>/Dockerfile` | Arquivo ou pasta do Dockerfile |
 | `build_args` | não | | Um `CHAVE=VALOR` por linha. Nunca coloque segredos aqui |
 | `webhook_url` | não | | URLs para POST após o push, uma por linha; linhas vazias são ignoradas; aceita marcadores |
+| `teams_webhook_url` | não | | URLs de webhook do Teams, uma por linha; cada uma recebe um cartão adaptável pronto |
 | `webhook_headers` | não | `{}` | Objeto JSON de strings |
 | `webhook_payload` | não | | Corpo enviado como está, com marcadores preenchidos; vazio = JSON padrão (ver Webhooks) |
 | `webhook_fail_on_error` | não | `true` | Falha o job se o webhook falhar |
@@ -99,7 +99,8 @@ Sem `tags`, cada imagem recebe 3 tags: `latest`, o SHA completo do commit e a **
 Marcadores na URL e no payload customizado: `{version}`, `{digest}`, `{image}`, `{sha}`. Se um destino falhar, os outros ainda são chamados; o log identifica só a posição (`Webhook 2/2 falhou: HTTP 500`).
 
 - Não escreva `webhook_payload` se o JSON padrão serve (ele já leva a versão, que um payload escrito no YAML não consegue levar).
-- O cartão do Teams é montado no fluxo do Power Automate, a partir desses campos; a action não formata mensagens.
+- Teams: use `teams_webhook_url`. O webhook de canal do Teams só aceita cartão adaptável; a action monta o cartão (versão para rollback, imagem, commit, autor, link da execução). Colocar a URL do Teams em `webhook_url` faz o fluxo falhar ("Há um problema com seu fluxo").
+- `webhook_headers` nunca vão para as URLs do Teams.
 
 ## Regras para a IA
 

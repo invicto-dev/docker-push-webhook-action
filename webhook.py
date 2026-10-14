@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""POST a payload to every URL in WEBHOOK_URL (one per line) with WEBHOOK_HEADERS.
+"""POST a payload to every URL in WEBHOOK_URL and a Teams card to every URL in
+WEBHOOK_TEAMS_URL (one URL per line in both).
 
 All input comes from environment variables, never from argv or string
 interpolation, so payloads and headers may contain any character. When
 WEBHOOK_PAYLOAD is empty, a JSON body describing the pushed image is sent.
+Teams destinations get an Adaptive Card built from the same data and never
+receive WEBHOOK_HEADERS (they may hold another destination's token).
 """
 import http.client
 import json
@@ -112,12 +115,13 @@ def run_values():
     }
 
 
-def default_payload(values):
+def push_info(values):
+    """Everything known about this push, shared by the JSON body and the Teams card."""
     sha = values["sha"]
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     run_id = os.environ.get("GITHUB_RUN_ID", "")
-    body = {
+    return {
         "repository": repo,
         "image": values["image"],
         "version": values["version"],
@@ -128,7 +132,42 @@ def default_payload(values):
         "author": git_log("%an", sha) if sha else "",
         "run_url": f"{server}/{repo}/actions/runs/{run_id}" if repo and run_id else "",
     }
-    return json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+
+def as_json(data):
+    return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+
+def teams_card(info):
+    """Teams 'Post to a channel when a webhook request is received' expects an Adaptive Card."""
+    name = info["image"].rsplit("/", 1)[-1] or info["repository"]
+    tag = info["version"] or (info["tags"][0] if info["tags"] else "")
+    short_sha = info["commit"][:7]
+    facts = []
+    if info["version"]:
+        facts.append(("Versão (rollback)", f"{info['version']} (horário UTC)"))
+    facts.append(("Imagem", f"{info['image']}:{tag}" if tag else info["image"]))
+    if short_sha:
+        facts.append(("Commit", f"{short_sha}: {info['commit_message']}" if info["commit_message"] else short_sha))
+    if info["author"]:
+        facts.append(("Autor", info["author"]))
+    if info["repository"]:
+        facts.append(("Repositório", info["repository"]))
+    card = {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [
+            {"type": "TextBlock", "text": f"Imagem publicada: {name}", "weight": "Bolder", "size": "Medium", "wrap": True},
+            {"type": "FactSet", "facts": [{"title": t, "value": v} for t, v in facts]},
+        ],
+        "actions": [{"type": "Action.OpenUrl", "title": "Ver execução no GitHub", "url": info["run_url"]}]
+        if info["run_url"] else [],
+    }
+    return as_json({
+        "type": "message",
+        "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "contentUrl": None, "content": card}],
+    })
 
 
 def fill_url(url, values):
@@ -139,25 +178,33 @@ def fill_payload(payload, values):
     return PLACEHOLDER_BYTES.sub(lambda m: values[m.group(1).decode()].encode("utf-8"), payload)
 
 
+def destinations(name, values):
+    lines = [line.strip() for line in os.environ.get(name, "").splitlines()]
+    return [fill_url(line, values) for line in lines if line]
+
+
 def main():
     fail_on_error = os.environ.get("WEBHOOK_FAIL_ON_ERROR", "true").strip().lower() != "false"
     headers = parse_headers(os.environ.get("WEBHOOK_HEADERS", ""))
     values = run_values()
-    lines = [line.strip() for line in os.environ.get("WEBHOOK_URL", "").splitlines()]
-    urls = [fill_url(line, values) for line in lines if line]
-    if not urls:
+    webhooks = destinations("WEBHOOK_URL", values)
+    teams = destinations("WEBHOOK_TEAMS_URL", values)
+    if not webhooks and not teams:
         print("Nenhum webhook configurado; nada a avisar.")
         return
-    for url in urls:
+    for url in webhooks + teams:
         validate_url(url)
+    info = push_info(values)
     payload = os.environb.get(b"WEBHOOK_PAYLOAD", b"")
-    payload = fill_payload(payload, values) if payload else default_payload(values)
+    payload = fill_payload(payload, values) if payload else as_json(info)
+    card = teams_card(info) if teams else b""
+    targets = [(f"Webhook {i}/{len(webhooks)}", url, headers, payload) for i, url in enumerate(webhooks, 1)]
+    targets += [(f"Teams {i}/{len(teams)}", url, {}, card) for i, url in enumerate(teams, 1)]
 
     failures = []
-    for index, url in enumerate(urls, 1):
-        label = f"Webhook {index}/{len(urls)}"
+    for label, url, target_headers, body in targets:
         try:
-            status = send(url, headers, payload)
+            status = send(url, target_headers, body)
         except urllib.error.HTTPError as error:
             failures.append(f"{label} falhou: HTTP {error.code}")
             continue

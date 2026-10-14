@@ -39,6 +39,10 @@ inputs:
     description: URLs to POST to after a successful push, one per line (empty lines are ignored). Accepts {version}, {digest}, {image} and {sha} placeholders. Empty skips the webhook.
     required: false
     default: ''
+  teams_webhook_url:
+    description: Microsoft Teams Workflows webhook URLs ("Post to a channel when a webhook request is received"), one per line. Each gets an Adaptive Card with the version, image, commit, author and a link to the run. webhook_headers are not sent to them.
+    required: false
+    default: ''
   webhook_headers:
     description: Webhook headers as a JSON object of strings.
     required: false
@@ -168,10 +172,11 @@ runs:
         fi
 
     - name: Call webhook
-      if: inputs.webhook_url != ''
+      if: inputs.webhook_url != '' || inputs.teams_webhook_url != ''
       shell: bash
       env:
         WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_TEAMS_URL: ${{ inputs.teams_webhook_url }}
         WEBHOOK_HEADERS: ${{ inputs.webhook_headers }}
         WEBHOOK_PAYLOAD: ${{ inputs.webhook_payload }}
         WEBHOOK_FAIL_ON_ERROR: ${{ inputs.webhook_fail_on_error }}
