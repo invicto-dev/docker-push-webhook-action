@@ -6,7 +6,7 @@ Quem pede ajuda costuma ser leigo em CI/CD. Seja literal: use os nomes exatos ab
 
 ## Instalar em um repositório
 
-Caminho 1 (terminal, recomendado se a pessoa tem `gh` logado): na raiz do repositório, rode `bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)` e deixe a pessoa responder as perguntas (endereço, usuário e senha do registry; webhooks do Teams e do Portainer são opcionais). Não responda a senha por ela.
+Caminho 1 (terminal, recomendado se a pessoa tem `gh` logado): na raiz do repositório, rode `bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)` e deixe a pessoa responder as perguntas (endereço, usuário e senha do registry; webhooks do Teams e do Portainer são opcionais; se vai usar IA). Não responda a senha por ela. O script cadastra a variável e os secrets e grava o workflow a partir de `templates/docker.yml`, que assume um `Dockerfile` na raiz; ajustar o workflow aos Dockerfiles do repositório é trabalho seu (veja abaixo). No Windows, o script roda no Git Bash, não no PowerShell nem no CMD.
 
 Caminho 2 (sem terminal): peça à pessoa para cadastrar a variável e os secrets na interface do GitHub e crie o arquivo `.github/workflows/docker.yml` com o conteúdo abaixo.
 
@@ -48,6 +48,16 @@ jobs:
 ```
 
 Para vários Dockerfiles, use `strategy.matrix.include` com `name`, `context` e `dockerfile`, e passe `name: ${{ matrix.name }}`, `context: ${{ matrix.context }}`, `dockerfile_path: ${{ matrix.dockerfile }}` à action. Modelo completo em `templates/docker.yml`.
+
+## Ajustar o workflow aos Dockerfiles do repositório
+
+O workflow do `install.sh` assume `Dockerfile` na raiz e contexto `.`. Se o repositório for diferente:
+
+- Liste os Dockerfiles versionados (`git ls-files | grep -i dockerfile`). Não publique os de `.devcontainer`, testes, fixtures ou exemplos, nem variantes de desenvolvimento (`Dockerfile.dev`), a menos que a pessoa peça.
+- `context` é a pasta a partir da qual os `COPY`/`ADD` do Dockerfile encontram os arquivos. Se o Dockerfile está numa subpasta mas copia arquivos da raiz (ex.: `package.json`), use `context: .` e `dockerfile_path: caminho/do/Dockerfile`.
+- Uma imagem: preencha `context` e `dockerfile_path` no passo da action (o nome padrão é o do repositório). Várias imagens: descomente o bloco `strategy.matrix` e as 3 linhas `matrix` do template, com um `name` diferente por imagem.
+- Se o Docker estiver instalado, confira cada imagem com `docker build -f <dockerfile> <context>` antes do commit. Na dúvida sobre o que publicar, pergunte à pessoa.
+- Não mude os secrets, a variável, a branch nem a versão da action.
 
 ## Inputs
 

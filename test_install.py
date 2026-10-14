@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 import stat
 import subprocess
@@ -17,9 +16,12 @@ FAKE_GH = """#!/usr/bin/env bash
 echo "$*" >> "$FAKE_GH_LOG"
 case "$1 $2" in
   "auth status") exit 0 ;;
+  "--version "*) echo "gh version ${FAKE_GH_VERSION:-2.60.0}" ;;
+  "variable --help") [ -z "$FAKE_GH_OLD" ] ;;
   "repo view")
     case "$*" in
       *isPrivate*) echo "${FAKE_GH_PRIVATE:-true}" ;;
+      *defaultBranchRef*) echo "${FAKE_GH_BRANCH:-main}" ;;
       *) echo "${FAKE_GH_REPO:-acme/app}" ;;
     esac ;;
   "secret set") [ -n "$FAKE_GH_FAIL_SECRET" ] && { echo "HTTP 403: Resource not accessible" >&2; exit 1; }
@@ -30,7 +32,16 @@ case "$1 $2" in
 esac
 """
 
+# Stands in for curl when install.sh runs alone (bash <(curl ...)): serves the files of this checkout.
+FAKE_CURL = """#!/usr/bin/env bash
+echo "$*" >> "$FAKE_CURL_LOG"
+url="${@: -1}"
+cat "$ACTION_ROOT/${url#*/v2/}"
+"""
+
 PASSWORD = "p@ss \"w$rd'!"
+TEMPLATE = (ROOT / "templates/docker.yml").read_text()
+LLMS_COPY = ".github/docker-push-webhook-action.llms.txt"
 
 
 class Sandbox:
@@ -43,6 +54,11 @@ class Sandbox:
         gh = bin_dir / "gh"
         gh.write_text(FAKE_GH)
         gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+        curl = bin_dir / "curl"
+        curl.write_text(FAKE_CURL)
+        curl.chmod(curl.stat().st_mode | stat.S_IEXEC)
+        self.curl_log = self.tmp / "curl.log"
+        self.curl_log.touch()
         self.log = self.tmp / "gh.log"
         self.secrets = self.tmp / "secrets"
         self.log.touch()
@@ -59,7 +75,9 @@ class Sandbox:
             wf.parent.mkdir(parents=True)
             wf.write_text(existing_workflow)
         self.env = {
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "FAKE_CURL_LOG": str(self.curl_log),
+            "ACTION_ROOT": str(ROOT),
             "HOME": str(self.tmp),
             "FAKE_GH_LOG": str(self.log),
             "FAKE_GH_SECRETS": str(self.secrets),
@@ -71,16 +89,17 @@ class Sandbox:
         }
         self.env.update(env or {})
 
-    def run(self, answers, *args):
+    def run(self, answers, *args, script=INSTALL):
         proc = subprocess.run(
-            [BASH, str(INSTALL), *args],
+            [BASH, str(script), *args],
             cwd=self.repo,
             env=self.env,
-            input=answers,
+            # bytes, not text: on Windows text mode turns "\n" into "\r\n" and decodes as cp1252,
+            # which a person typing in Git Bash never produces
+            input=answers.encode(),
             capture_output=True,
-            text=True,
         )
-        self.stdout = proc.stdout + proc.stderr
+        self.stdout = (proc.stdout + proc.stderr).decode("utf-8")
         return proc.returncode
 
     def git(self, *args):
@@ -112,8 +131,8 @@ class Sandbox:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
-def answers(host="registry.acme.com", user="ci", password=PASSWORD, hook="", portainer="", push="n"):
-    return f"{host}\n{user}\n{password}\n{hook}\n{portainer}\n{push}\n"
+def answers(host="registry.acme.com", user="ci", password=PASSWORD, hook="", portainer="", ai="n", push="n"):
+    return f"{host}\n{user}\n{password}\n{hook}\n{portainer}\n{ai}\n{push}\n"
 
 
 class InstallTest(unittest.TestCase):
@@ -126,7 +145,6 @@ class InstallTest(unittest.TestCase):
         sb = self.sandbox()
         self.assertEqual(sb.run(answers()), 0, sb.stdout)
         check_workflow(self, sb.workflow, "workflow gerado")
-        self.assertNotIn("matrix", sb.workflow)
         self.assertEqual(sb.recorded_variables(), {"REGISTRY_URL": "registry.acme.com"})
         self.assertEqual(
             sb.recorded_secrets(),
@@ -163,23 +181,66 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(sb.run(answers()), 0, sb.stdout)
         self.assertIn("https://github.com/acme/app/actions", sb.stdout)
 
-    def test_several_dockerfiles_generate_a_matrix_with_unique_names(self):
-        sb = self.sandbox(files=("config/docker/Dockerfile", "front/Dockerfile"))
+    def test_workflow_is_the_template(self):
+        sb = self.sandbox()
         self.assertEqual(sb.run(answers()), 0, sb.stdout)
-        check_workflow(self, sb.workflow, "workflow com matrix")
-        self.assertIn("matrix:", sb.workflow)
-        self.assertIn("name: config-docker", sb.workflow)
-        self.assertIn("name: front", sb.workflow)
-        self.assertIn("dockerfile: front/Dockerfile", sb.workflow)
-        self.assertIn("name: ${{ matrix.name }}", sb.workflow)
+        self.assertEqual(sb.workflow, TEMPLATE)
 
-    def test_single_dockerfile_in_subfolder(self):
-        sb = self.sandbox(files=("api/Dockerfile",))
+    def test_workflow_runs_on_the_default_branch(self):
+        sb = self.sandbox(env={"FAKE_GH_BRANCH": "master"})
         self.assertEqual(sb.run(answers()), 0, sb.stdout)
-        check_workflow(self, sb.workflow, "workflow subpasta")
-        self.assertIn("context: api", sb.workflow)
-        self.assertIn("dockerfile_path: api/Dockerfile", sb.workflow)
-        self.assertNotIn("matrix:", sb.workflow)
+        self.assertIn("branches: [master]", sb.workflow)
+        self.assertNotIn("[main]", sb.workflow)
+        self.assertEqual(sb.workflow.replace("master", "main"), TEMPLATE)
+
+    def test_alone_downloads_the_template_from_v2(self):
+        # bash <(curl .../install.sh) has no checkout next to it
+        sb = self.sandbox()
+        solo = sb.tmp / "solo"
+        solo.mkdir()
+        shutil.copy(INSTALL, solo / "install.sh")
+        self.assertEqual(sb.run(answers(ai="s"), script=solo / "install.sh"), 0, sb.stdout)
+        self.assertEqual(sb.workflow, TEMPLATE)
+        self.assertEqual((sb.repo / LLMS_COPY).read_text(), (ROOT / "llms.txt").read_text())
+        log = sb.curl_log.read_text()
+        self.assertIn("raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/templates/docker.yml", log)
+        self.assertIn("raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/llms.txt", log)
+
+    def test_ai_question_is_always_asked(self):
+        sb = self.sandbox()
+        self.assertEqual(sb.run(answers()), 0, sb.stdout)
+        self.assertIn("IA", sb.stdout)
+        self.assertFalse((sb.repo / LLMS_COPY).exists())
+
+    def test_ai_yes_brings_llms_txt_and_a_tip(self):
+        sb = self.sandbox()
+        self.assertEqual(sb.run(answers(ai="s")), 0, sb.stdout)
+        self.assertEqual((sb.repo / LLMS_COPY).read_text(), (ROOT / "llms.txt").read_text())
+        self.assertIn(LLMS_COPY, sb.stdout)
+        self.assertIn(".github/workflows/docker.yml", sb.stdout)
+
+    def test_without_root_dockerfile_lists_them_and_does_not_offer_commit(self):
+        sb = self.sandbox(files=("config/docker/Dockerfile", "front/Dockerfile"))
+        sb.with_origin()
+        self.assertEqual(sb.run(answers(push="s")), 0, sb.stdout)
+        self.assertIn("config/docker/Dockerfile", sb.stdout)
+        self.assertIn("front/Dockerfile", sb.stdout)
+        self.assertIn("context", sb.stdout)
+        self.assertNotIn("commit e push agora", sb.stdout)
+        self.assertEqual(sb.git("rev-list", "--count", "HEAD").strip(), "1")
+
+    def test_dockerfile_variants_are_found(self):
+        sb = self.sandbox(files=("Dockerfile.prod", "api.Dockerfile"))
+        self.assertEqual(sb.run(answers()), 0, sb.stdout)
+        self.assertIn("Dockerfile.prod", sb.stdout)
+        self.assertIn("api.Dockerfile", sb.stdout)
+
+    def test_old_gh_explains_how_to_update(self):
+        sb = self.sandbox(env={"FAKE_GH_OLD": "1", "FAKE_GH_VERSION": "2.4.0"})
+        self.assertNotEqual(sb.run(answers()), 0)
+        self.assertIn("2.4.0", sb.stdout)
+        self.assertIn("https://cli.github.com", sb.stdout)
+        self.assertEqual(sb.recorded_secrets(), {})
 
     def test_existing_workflow_is_kept_unless_confirmed(self):
         sb = self.sandbox(existing_workflow="ORIGINAL\n")
@@ -236,7 +297,8 @@ class InstallTest(unittest.TestCase):
         empty.mkdir()
         sb.env["PATH"] = str(empty)
         self.assertNotEqual(sb.run(answers()), 0)
-        self.assertIn("brew install gh", sb.stdout)
+        for hint in ("brew install gh", "winget install", "cli.github.com"):
+            self.assertIn(hint, sb.stdout)
 
     def test_empty_credentials_are_rejected(self):
         sb = self.sandbox()
@@ -250,7 +312,7 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(sb.recorded_secrets(), {})
 
     # Prompt order with --org: [overwrite workflow?] [free plan + private: continue?]
-    # "Continuar?" (every repo in the org) host user password hook [commit and push?]
+    # "Continuar?" (every repo in the org) host user password teams portainer ai [commit and push?]
     def test_org_with_paid_plan_sets_org_secrets(self):
         sb = self.sandbox(env={"FAKE_GH_PLAN": "team", "FAKE_GH_PRIVATE": "true"})
         self.assertEqual(sb.run("s\n" + answers(), "--org", "acme"), 0, sb.stdout)
@@ -283,55 +345,13 @@ class InstallTest(unittest.TestCase):
         self.assertIn("git push", sb.stdout)
         self.assertEqual(sb.git("show", "--name-only", "--format=", "HEAD").split(), [".github/workflows/docker.yml"])
 
-    def matrix_names(self, files, repo_name="repo", env=None):
-        sb = self.sandbox(files=files, repo_name=repo_name, env=env)
-        self.assertEqual(sb.run(answers()), 0, sb.stdout)
-        check_workflow(self, sb.workflow, "workflow com matrix")
-        names = re.findall(r"^\s+- name: (.*)$", sb.workflow, re.M)
-        self.assertEqual(len(names), len(files), sb.workflow)
-        self.assertEqual(len(set(names)), len(names), names)
-        for n in names:
-            self.assertRegex(n, r"^[a-z0-9]+(-[a-z0-9]+)*$")
-            self.assertNotRegex(n, r"^([0-9].*|true|false|yes|no|on|off|null|y|n)$")
-        if shutil.which("actionlint"):
-            lint = subprocess.run(["actionlint", ".github/workflows/docker.yml"], cwd=sb.repo, capture_output=True, text=True)
-            self.assertEqual(lint.returncode, 0, lint.stdout + lint.stderr)
-        return sb, names
-
-    def test_colliding_slugs_get_unique_names(self):
-        _, names = self.matrix_names(("a/b/Dockerfile", "a-b/Dockerfile"))
-        self.assertEqual(sorted(names), ["a-b", "a-b-2"])
-
-    def test_root_dockerfile_in_repo_named_like_a_folder(self):
-        # the root image is named after the GitHub repo (acme/front), not the local folder
-        _, names = self.matrix_names(("Dockerfile", "front/Dockerfile"), env={"FAKE_GH_REPO": "acme/front"})
-        self.assertEqual(sorted(names), ["front", "front-2"])
-        _, names = self.matrix_names(("Dockerfile", "front/Dockerfile"), repo_name="front")  # fake gh: acme/app
-        self.assertEqual(sorted(names), ["app", "front"])
-
-    def test_leading_dot_and_uppercase_folders(self):
-        _, names = self.matrix_names((".hidden/Dockerfile", "A-B/Dockerfile", "a/b/Dockerfile"))
-        self.assertEqual(sorted(names), ["a-b", "a-b-2", "hidden"])
-
-    def test_names_that_yaml_would_not_read_as_text(self):
-        sb, names = self.matrix_names(("true/Dockerfile", "1.0/Dockerfile", "null/Dockerfile"))
-        self.assertEqual(sorted(names), ["img-1-0", "img-null", "img-true"])
-        self.assertIn("context: ./true", sb.workflow)
-        self.assertIn("context: ./1.0", sb.workflow)
-
     @unittest.skipUnless(shutil.which("actionlint"), "actionlint não instalado")
     def test_generated_workflows_pass_actionlint(self):
-        for files in (("Dockerfile",), ("api/Dockerfile",), ("a/Dockerfile", "b/Dockerfile")):
-            sb = self.sandbox(files=files)
+        for branch in ("main", "master", "release/1.x"):
+            sb = self.sandbox(env={"FAKE_GH_BRANCH": branch})
             self.assertEqual(sb.run(answers()), 0, sb.stdout)
-            lint = subprocess.run(
-                ["actionlint", ".github/workflows/docker.yml"],
-                cwd=sb.repo,
-                capture_output=True,
-                text=True,
-            )
+            lint = subprocess.run(["actionlint", ".github/workflows/docker.yml"], cwd=sb.repo, capture_output=True, text=True)
             self.assertEqual(lint.returncode, 0, lint.stdout + lint.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()

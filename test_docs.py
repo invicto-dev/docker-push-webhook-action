@@ -89,8 +89,8 @@ class DocsConsistencyTest(unittest.TestCase):
         template = (ROOT / "templates/docker.yml").read_text()
         self.assertIn("teams_webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}", template)
         self.assertNotIn("secrets.TEAMS_WEBHOOK_URL }}\n            ${{", template, "Teams must not be a webhook_url line")
-        # INSTALAR.md only talks about the secret; the template carries the input name
-        for name in ("README.md", "llms.txt", "install.sh"):
+        # INSTALAR.md only talks about the secret; the template (which install.sh copies) carries the input name
+        for name in ("README.md", "llms.txt"):
             self.assertIn("teams_webhook_url", (ROOT / name).read_text(), name)
 
     def test_docs_use_one_name_for_the_teams_webhook(self):

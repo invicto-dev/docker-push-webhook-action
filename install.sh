@@ -5,15 +5,22 @@
 # ou, com o arquivo baixado:
 #   bash install.sh             # secrets cadastrados neste repositório (padrão)
 #   bash install.sh --org ORG   # secrets cadastrados na organização (veja INSTALAR.md)
+# No Windows, rode no Git Bash (não no PowerShell nem no CMD).
+# O script só cadastra a variável e os secrets e grava o workflow a partir de
+# templates/docker.yml. Onde fica cada Dockerfile quem decide é você (ou a sua IA).
 # Nada é commitado nem enviado sem a sua confirmação.
 # Ordem das perguntas: [sobrescrever o workflow existente?] [com --org, plano gratuito +
 # repo privado: continuar?] [com --org: "Continuar?" (senha vale p/ TODOS os repos da org)]
-# endereço, usuário, senha, webhook do Teams, webhook do Portainer, [fazer commit e push?].
+# endereço, usuário, senha, webhook do Teams, webhook do Portainer, vai usar IA?,
+# [fazer commit e push? (só com Dockerfile na raiz)].
 # Recusar a sobrescrita mantém o workflow, mas os secrets ainda são cadastrados.
 set -euo pipefail
 
-ACTION="invicto-dev/docker-push-webhook-action@v2"
+RAW="https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2"
 WORKFLOW=".github/workflows/docker.yml"
+LLMS_COPY=".github/docker-push-webhook-action.llms.txt"
+# Pasta deste script. Rodando por "bash <(curl ...)" ela não tem os arquivos da action, e eles são baixados.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
 org=""
 
 die() {
@@ -29,6 +36,15 @@ confirm() {
   [[ "$ans" =~ $yes_re ]]
 }
 
+# asset "caminho": conteúdo de um arquivo da action (local ao lado do script, ou baixado da v2).
+asset() {
+  if [[ -n "$here" && -f "$here/$1" ]]; then
+    cat "$here/$1"
+  else
+    curl -fsSL "$RAW/$1" || die "Não consegui baixar $RAW/$1. Confira a internet e rode de novo."
+  fi
+}
+
 while (( $# )); do
   case "$1" in
     --org)
@@ -42,19 +58,23 @@ while (( $# )); do
   esac
 done
 
-command -v gh >/dev/null || die "GitHub CLI (gh) não encontrado. Instale em https://cli.github.com (macOS: brew install gh) e rode de novo."
+command -v gh >/dev/null || die "GitHub CLI (gh) não encontrado. Instale e rode de novo:
+  macOS:   brew install gh
+  Windows: winget install --id GitHub.cli   (depois abra um Git Bash novo)
+  Linux:   siga https://cli.github.com (o 'gh' do apt do Ubuntu 22.04 é antigo demais)"
+# 'gh variable' existe desde a versão 2.25; distribuições antigas (ex.: apt do Ubuntu 22.04) trazem a 2.4.
+gh variable --help >/dev/null 2>&1 || die "Seu GitHub CLI é antigo demais ($(gh --version 2>/dev/null | head -1)). Atualize pela página oficial: https://cli.github.com"
 gh auth status >/dev/null 2>&1 || die "Você não está logado no GitHub CLI. Rode: gh auth login"
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Rode este script dentro de um repositório git."
 cd "$root"
 repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)" || die "Não consegui identificar o repositório no GitHub. Ele tem um remote 'origin'?"
+branch="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null || true)"
+[[ -n "$branch" ]] || branch="main"
 
-dockerfiles=()
-count=0
-while IFS= read -r f; do
-  dockerfiles+=("$f")
-  count=$((count + 1))
-done < <(git ls-files --cached --others --exclude-standard | grep -E '(^|/)Dockerfile$' | grep -v 'node_modules/' || true)
-(( count > 0 )) || die "Nenhum Dockerfile encontrado neste repositório."
+# Só para informar: quem decide quais imagens publicar é a pessoa, no workflow.
+dockerfiles="$(git ls-files --cached --others --exclude-standard |
+  grep -E '(^|/)(Dockerfile([.][^/]*)?|[^/]*[.][Dd]ockerfile)$' | grep -v -e 'node_modules/' -e '[.]dockerignore$' || true)"
+[[ -n "$dockerfiles" ]] || die "Nenhum Dockerfile encontrado neste repositório."
 
 write_workflow=1
 if [[ -f "$WORKFLOW" ]]; then
@@ -112,110 +132,37 @@ set_secret REGISTRY_PASSWORD "$pass"
 if [[ -n "$hook" ]]; then set_secret TEAMS_WEBHOOK_URL "$hook"; fi
 if [[ -n "$portainer" ]]; then set_secret PORTAINER_WEBHOOK_URL "$portainer"; fi
 
-# Image name from the Dockerfile folder: "config/docker" -> "config-docker".
-# Always a valid Docker name (lowercase letters, digits, single dashes, starting
-# with a letter/digit) that YAML reads as a string; "image" when nothing is left.
-slug() {
-  local s
-  s="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | tr -s '-')"
-  s="${s#-}"
-  s="${s%-}"
-  [[ -n "$s" ]] || s="image"
-  # YAML would read these as number/boolean/null, not text.
-  case "$s" in
-    [0-9]*|true|false|yes|no|on|off|null|y|n) s="img-$s" ;;
-  esac
-  printf '%s' "$s"
-}
-# Same for a context path: "./" keeps keyword-like folders (true, null, 1.0) as text.
-yaml_path() {
-  case "$1" in
-    [0-9]*|true|false|yes|no|on|off|null|y|n|True|False|Null|TRUE|FALSE|NULL|Yes|No|YES|NO|On|Off|ON|OFF|~) printf './%s' "$1" ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
-dir_of() { local d; d="$(dirname "$1")"; printf '%s' "$d"; }
-# Unique image names across the matrix: a, a-2, a-3 ... (plain delimited string, Bash 3.2).
-# Sets $img (no subshell, so $used persists).
-used=" "
-unique_name() {
-  local base="$1" n=2
-  img="$base"
-  while [[ "$used" == *" $img "* ]]; do
-    img="$base-$n"
-    n=$((n + 1))
-  done
-  used="$used$img "
-}
-
 if (( ! write_workflow )); then
   echo "$WORKFLOW mantido como estava. Secrets atualizados."
   exit 0
 fi
 
+# O template da action, só com a branch trocada pela branch padrão do repositório.
+template="$(asset templates/docker.yml)"
 mkdir -p "$(dirname "$WORKFLOW")"
-{
-  cat <<'EOF'
-# Publica (envia) a imagem Docker deste projeto para o registry da empresa.
-# Gerado por install.sh. REGISTRY_URL fica em Settings > Secrets and variables >
-# Actions > Variables (aceita também Secret); REGISTRY_USERNAME e REGISTRY_PASSWORD
-# ficam na aba Secrets.
+shopt -u patsub_replacement 2>/dev/null || true  # bash 5.2+: "&" na branch não vira o texto encontrado
+old='branches: [main]' new="branches: [$branch]"
+template=${template//"$old"/$new}
+old='na branch "main"' new="na branch \"$branch\""
+printf '%s\n' "${template//"$old"/$new}" > "$WORKFLOW"
+echo
+echo "Pronto: $WORKFLOW criado."
 
-name: Docker
-run-name: Publicar imagem Docker
+if confirm "Vai usar uma IA (Claude Code, Copilot, Cursor...) para ajustar o workflow?"; then
+  asset llms.txt > "$LLMS_COPY"
+  echo "Dica: peça para a sua IA: \"Leia $LLMS_COPY e ajuste $WORKFLOW para os Dockerfiles deste repositório.\""
+  echo "($LLMS_COPY é só para a IA; não precisa commitar.)"
+fi
 
-on:
-  push:
-    branches: [main]   # roda sempre que algo novo entrar na branch "main"
-  workflow_dispatch:   # ou manualmente: aba Actions > Docker > Run workflow
-
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-EOF
-  if (( count > 1 )); then
-    echo "    strategy:"
-    echo "      matrix:"
-    echo "        include:"
-    for f in "${dockerfiles[@]}"; do
-      d="$(dir_of "$f")"
-      if [[ "$d" == "." ]]; then
-        unique_name "$(slug "${repo#*/}")"
-        ctx="."
-      else
-        unique_name "$(slug "$d")"
-        ctx="$(yaml_path "$d")"
-      fi
-      echo "          - name: $img"
-      echo "            context: $ctx   # se o build não achar arquivos, troque por ."
-      echo "            dockerfile: $f"
-    done
-  fi
-  cat <<EOF
-    steps:
-      - uses: actions/checkout@v4
-      - uses: $ACTION
-        with:
-          registry_url: \${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
-          registry_username: \${{ secrets.REGISTRY_USERNAME }}
-          registry_password: \${{ secrets.REGISTRY_PASSWORD }}
-          teams_webhook_url: \${{ secrets.TEAMS_WEBHOOK_URL }}
-          webhook_url: \${{ secrets.PORTAINER_WEBHOOK_URL }}
-EOF
-  if (( count > 1 )); then
-    echo '          name: ${{ matrix.name }}'
-    echo '          context: ${{ matrix.context }}'
-    echo '          dockerfile_path: ${{ matrix.dockerfile }}'
-  else
-    d="$(dir_of "${dockerfiles[0]}")"
-    if [[ "$d" != "." ]]; then
-      echo "          context: $(yaml_path "$d")   # se o build não achar arquivos, troque por ."
-      echo "          dockerfile_path: ${dockerfiles[0]}"
-    fi
-  fi
-} > "$WORKFLOW"
+if [[ ! -f Dockerfile ]]; then
+  echo
+  echo "Não há Dockerfile na raiz. Dockerfiles neste repositório:"
+  sed 's/^/  /' <<<"$dockerfiles"
+  echo "Antes do commit, abra $WORKFLOW e preencha 'context' e 'dockerfile_path'"
+  echo "(ou o bloco de várias imagens, já explicado no arquivo). Depois:"
+  echo "  git add $WORKFLOW && git commit -m 'ci: add docker workflow' && git push"
+  exit 0
+fi
 
 # Vazio = sem mudança (novo, alterado ou staged aparecem aqui).
 if [[ -z "$(git status --porcelain -- "$WORKFLOW")" ]]; then
@@ -223,9 +170,6 @@ if [[ -z "$(git status --porcelain -- "$WORKFLOW")" ]]; then
   exit 0
 fi
 
-echo
-echo "Pronto: $WORKFLOW criado."
-echo "Confira o campo 'context' de cada imagem no arquivo: se o build falhar procurando arquivos, troque por '.'."
 if confirm "Fazer commit e push agora?"; then
   git add "$WORKFLOW"
   # Só o workflow entra no commit: outros arquivos já preparados (staged) ficam de fora.
