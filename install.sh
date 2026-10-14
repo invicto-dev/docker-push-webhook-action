@@ -196,7 +196,9 @@ EOF
           registry_url: \${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: \${{ secrets.REGISTRY_USERNAME }}
           registry_password: \${{ secrets.REGISTRY_PASSWORD }}
-          webhook_url: \${{ secrets.DEPLOY_WEBHOOK_URL }}
+          webhook_url: |
+            \${{ secrets.DEPLOY_WEBHOOK_URL }}
+            \${{ secrets.PORTAINER_WEBHOOK_URL }}
 EOF
   if (( count > 1 )); then
     echo '          name: ${{ matrix.name }}'

@@ -87,9 +87,9 @@ jobs:
           dockerfile_path: ${{ matrix.dockerfile }}
           build_args: |
             APP_VERSION=${{ github.sha }}
-          webhook_url: ${{ secrets.DEPLOY_WEBHOOK_URL }}
-          webhook_headers: '{"Authorization": "Bearer ${{ secrets.DEPLOY_TOKEN }}"}'
-          webhook_payload: '{"image": "${{ matrix.name }}"}'
+          webhook_url: |
+            ${{ secrets.DEPLOY_WEBHOOK_URL }}
+            ${{ secrets.PORTAINER_WEBHOOK_URL }}
 ```
 
 ## Tags and rollback
@@ -123,9 +123,9 @@ The job summary shows the version of each run. Custom `tags` replace all three d
 | `context` | no | `.` | Build context. |
 | `dockerfile_path` | no | `<context>/Dockerfile` | Dockerfile path, or a directory containing one. |
 | `build_args` | no | `''` | One `KEY=VALUE` per line. |
-| `webhook_url` | no | `''` | URL to POST to after a successful push. Empty skips the webhook. |
+| `webhook_url` | no | `''` | URLs to POST to after a successful push, one per line. Empty lines are ignored; empty skips the webhook. Accepts placeholders (see [Webhooks](#webhooks)). |
 | `webhook_headers` | no | `{}` | JSON object of string headers. Values are masked in logs. |
-| `webhook_payload` | no | `''` | Request body, sent exactly as given. `Content-Type` defaults to `application/json`. |
+| `webhook_payload` | no | `''` | Request body, sent as given with placeholders filled in. Empty sends the default JSON (see [Webhooks](#webhooks)). `Content-Type` defaults to `application/json`. |
 | `webhook_fail_on_error` | no | `true` | Fail the job on network errors, timeouts or non-2xx responses. Invalid `webhook_url`/`webhook_headers` always fail. |
 
 The pushed image is `<registry_url>/<name>:<tag>`. Validation errors are written in Brazilian Portuguese and say which secret or field to fix.
@@ -141,12 +141,72 @@ The pushed image is `<registry_url>/<name>:<tag>`. Validation errors are written
 
 A summary with the pushed references and the digest is also added to the job summary.
 
-## Webhook behavior
+## Webhooks
 
-- Always `POST`, 30-second timeout. Redirects are not followed and count as failures.
-- The webhook runs only after a successful push and cannot reference this action's own outputs. Image and the `latest`/SHA tags are already known to the caller; the version tag and the digest are not available inside the payload (read them from the `version`/`digest` outputs in a later step).
-- URL, headers, payload and response body are never printed in the logs.
-- `webhook_url` must not embed credentials (`https://user:pass@host`); send them in `webhook_headers` instead.
+`webhook_url` takes one URL per line. After a successful push, each one receives a `POST`, in order. Empty lines are ignored, so a secret that does not exist yet simply skips that destination:
+
+```yaml
+webhook_url: |
+  ${{ secrets.DEPLOY_WEBHOOK_URL }}
+  ${{ secrets.PORTAINER_WEBHOOK_URL }}
+```
+
+Without `webhook_payload`, every destination receives this JSON, built after the push:
+
+```json
+{
+  "repository": "acme/app",
+  "image": "registry.example.com/app",
+  "version": "2026.10.14-1532Z-c14ae67",
+  "tags": ["latest", "c14ae67b85586abfa9fa7fbed1998d35bb9719d8", "2026.10.14-1532Z-c14ae67"],
+  "digest": "sha256:15b6ff5249a174ad0f7dc406b8fcd0950e323d1c316c12f08102a892091281fd",
+  "commit": "c14ae67b85586abfa9fa7fbed1998d35bb9719d8",
+  "commit_message": "fix: retry connector login",
+  "author": "Ana Souza",
+  "run_url": "https://github.com/acme/app/actions/runs/123456789"
+}
+```
+
+`commit_message` and `author` are empty when there is no git history (no `actions/checkout`). `version` is empty when you set `tags`.
+
+Placeholders, filled in every URL line and in a custom `webhook_payload`:
+
+| Placeholder | Value |
+|---|---|
+| `{version}` | version tag (e.g. `2026.10.14-1532Z-c14ae67`) |
+| `{digest}` | image digest |
+| `{image}` | image without tag |
+| `{sha}` | full commit SHA |
+
+In URLs the value is URL-encoded. Unknown placeholders are left as they are. Example, a Portainer service webhook that deploys the exact version: store `https://portainer.example.com/api/webhooks/<id>?tag={version}` in `PORTAINER_WEBHOOK_URL`.
+
+For a Power Automate flow ("When an HTTP request is received"), use this request body schema to get every field as dynamic content:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "repository": {"type": "string"},
+    "image": {"type": "string"},
+    "version": {"type": "string"},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "digest": {"type": "string"},
+    "commit": {"type": "string"},
+    "commit_message": {"type": "string"},
+    "author": {"type": "string"},
+    "run_url": {"type": "string"}
+  }
+}
+```
+
+Behavior:
+
+- Always `POST`, 30-second timeout per destination. Redirects are not followed and count as failures.
+- Every URL and header is validated before anything is sent; a configuration error sends nothing.
+- A failing destination does not stop the others. The job fails at the end (or only warns with `webhook_fail_on_error: false`).
+- The log names destinations only by position (`Webhook 2/2 falhou: HTTP 500`). URLs, headers, payload and response bodies are never printed.
+- `webhook_url` must not embed credentials (`https://user:pass@host`); send them in `webhook_headers` instead. Headers go to every destination.
+- Since v2.3.0, an empty `webhook_payload` sends the default JSON (it used to send no body).
 
 ## Security notes
 
