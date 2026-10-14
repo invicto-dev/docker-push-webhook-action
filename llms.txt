@@ -6,7 +6,7 @@ Quem pede ajuda costuma ser leigo em CI/CD. Seja literal: use os nomes exatos ab
 
 ## Instalar em um repositório
 
-Caminho 1 (terminal, recomendado se a pessoa tem `gh` logado): na raiz do repositório, rode `bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)` e deixe a pessoa responder as perguntas (endereço, usuário e senha do registry). Não responda a senha por ela.
+Caminho 1 (terminal, recomendado se a pessoa tem `gh` logado): na raiz do repositório, rode `bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)` e deixe a pessoa responder as perguntas (endereço, usuário e senha do registry; webhooks do Teams e do Portainer são opcionais). Não responda a senha por ela.
 
 Caminho 2 (sem terminal): peça à pessoa para cadastrar a variável e os secrets na interface do GitHub e crie o arquivo `.github/workflows/docker.yml` com o conteúdo abaixo.
 

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Instala o CI de build + push Docker no repositório atual.
-# Rode na raiz do repositório:
+# Rode na raiz do repositório (sem baixar nada):
+#   bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)
+# ou, com o arquivo baixado:
 #   bash install.sh             # secrets cadastrados neste repositório (padrão)
 #   bash install.sh --org ORG   # secrets cadastrados na organização (veja INSTALAR.md)
 # Nada é commitado nem enviado sem a sua confirmação.
 # Ordem das perguntas: [sobrescrever o workflow existente?] [com --org, plano gratuito +
 # repo privado: continuar?] [com --org: "Continuar?" (senha vale p/ TODOS os repos da org)]
-# endereço, usuário, senha, webhook, [fazer commit e push?].
+# endereço, usuário, senha, webhook do Teams, webhook do Portainer, [fazer commit e push?].
 # Recusar a sobrescrita mantém o workflow, mas os secrets ainda são cadastrados.
 set -euo pipefail
 
@@ -80,6 +82,8 @@ IFS= read -rs pass || pass=""
 echo
 printf 'Link do webhook do Teams (opcional, Enter para pular): '
 IFS= read -r hook || hook=""
+printf 'Webhook do Portainer para deploy automático (opcional, Enter para pular): '
+IFS= read -r portainer || portainer=""
 [[ -n "${host//[[:space:]]/}" && -n "$user" && -n "$pass" ]] || die "Endereço, usuário e senha do registry são obrigatórios."
 
 set_secret() {
@@ -106,6 +110,7 @@ set_variable REGISTRY_URL "$host"
 set_secret REGISTRY_USERNAME "$user"
 set_secret REGISTRY_PASSWORD "$pass"
 if [[ -n "$hook" ]]; then set_secret TEAMS_WEBHOOK_URL "$hook"; fi
+if [[ -n "$portainer" ]]; then set_secret PORTAINER_WEBHOOK_URL "$portainer"; fi
 
 # Image name from the Dockerfile folder: "config/docker" -> "config-docker".
 # Always a valid Docker name (lowercase letters, digits, single dashes, starting
@@ -231,6 +236,8 @@ if confirm "Fazer commit e push agora?"; then
     echo "Quando resolver, envie com: git push" >&2
     exit 1
   }
+  echo "Enviado. Acompanhe a publicação em: https://github.com/$repo/actions"
 else
   echo "Quando quiser: git add $WORKFLOW && git commit -m 'ci: add docker workflow' && git push"
+  echo "Depois do push, acompanhe a publicação em: https://github.com/$repo/actions"
 fi
