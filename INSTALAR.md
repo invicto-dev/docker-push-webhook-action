@@ -1,10 +1,34 @@
 # Instalar o build e push de Docker em um repositório
 
-Este guia é para quem **não conhece CI/CD**. Siga os passos na ordem. Leva uns 5 minutos.
+## Instale com 1 comando
 
-Você precisa ter: acesso de **admin** ao repositório no GitHub (cadastrar secrets exige admin; em repositório pessoal, ser o dono), e saber o endereço, o usuário e a senha (ou token) do registry da empresa.
+Abra o terminal **na pasta do repositório onde você quer o CI** e rode:
 
-## Caminho A: pelo navegador (sem instalar nada)
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)
+```
+
+Funciona em qualquer repositório: é só entrar na pasta dele antes (`cd caminho/do/repo`). O script pergunta, uma coisa por vez:
+
+1. endereço do registry (ex: `registry.empresa.com`)
+2. usuário do registry
+3. senha ou token do registry (não aparece na tela)
+4. link do webhook do Teams (opcional, Enter para pular)
+5. webhook do Portainer para deploy automático (opcional, Enter para pular)
+6. se pode fazer commit e push
+
+Ele cadastra tudo no GitHub, cria `.github/workflows/docker.yml` e mostra o link para acompanhar a publicação. Nada é enviado sem você confirmar.
+
+**Antes, uma vez só:** instale e logue o [GitHub CLI](https://cli.github.com): `brew install gh` e depois `gh auth login`. Você precisa ser **admin** do repositório no GitHub (em repositório pessoal, ser o dono).
+
+Quer ler o script antes de rodar? Abra [install.sh](install.sh): ele é curto.
+
+Depois de rodar, confira o campo `context` de cada imagem no arquivo criado: se o build falhar procurando arquivos, troque por `.`.
+
+---
+
+<details>
+<summary><b>Sem terminal? Instale pelo navegador</b></summary>
 
 ### 1. Cadastre a variável e os secrets
 
@@ -37,21 +61,14 @@ No repositório, clique em **Add file > Create new file**. No nome do arquivo, d
 
 Abra a aba **Actions**, escolha **Docker** na lista da esquerda e clique em **Run workflow**. Quando ficar verde, a imagem está no registry.
 
-## Caminho B: pelo terminal (um comando)
+</details>
 
-Precisa do [GitHub CLI](https://cli.github.com) (`brew install gh`) logado (`gh auth login`). Na raiz do repositório:
+## Consulta (só se precisar)
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)
-```
+<details>
+<summary><b>Avisar o Teams e o Portainer</b></summary>
 
-O script acha os Dockerfiles, pergunta o endereço, o usuário e a senha do registry (a senha não aparece na tela), cadastra o endereço como variável e o usuário e a senha como secrets, cria `.github/workflows/docker.yml` e pergunta se pode fazer commit e push. Quer ler antes de rodar? Baixe o arquivo `install.sh` e abra no editor: ele é curto.
-
-Em seguida, confira o campo `context` de cada imagem no arquivo criado: se o build falhar procurando arquivos, troque por `.`.
-
-## Avisar o Teams e o Portainer
-
-Depois de cada envio, a action avisa o canal do Teams cadastrado em `TEAMS_WEBHOOK_URL` e o endereço cadastrado em `PORTAINER_WEBHOOK_URL` (deploy automático). Quem não estiver cadastrado é simplesmente pulado, então dá para criar o do Portainer depois, sem mexer no workflow.
+Depois de cada envio, a action avisa o canal do Teams cadastrado em `TEAMS_WEBHOOK_URL` e o endereço cadastrado em `PORTAINER_WEBHOOK_URL` (deploy automático). Quem não estiver cadastrado é simplesmente pulado, então dá para criar o do Portainer depois, sem mexer no workflow (rode o comando de novo ou cadastre o secret pelo navegador).
 
 **Criar o webhook do Teams:**
 
@@ -61,7 +78,10 @@ Depois de cada envio, a action avisa o canal do Teams cadastrado em `TEAMS_WEBHO
 
 A action manda para o canal um cartão pronto com a versão para rollback (`2026.10.14-1532Z-c14ae67`, horário UTC), a imagem, o commit e a mensagem, quem fez e um botão para abrir a execução no GitHub. Não precisa mexer no fluxo.
 
-## Voltar para uma versão anterior (rollback)
+</details>
+
+<details>
+<summary><b>Voltar para uma versão anterior (rollback)</b></summary>
 
 Cada publicação gera uma tag de versão como `2026.10.14-1532Z-c14ae67`:
 
@@ -70,11 +90,23 @@ Cada publicação gera uma tag de versão como `2026.10.14-1532Z-c14ae67`:
 
 Se uma versão deu problema, abra a lista de tags da imagem no registry (ela já fica em ordem de data) e use a **tag de versão logo anterior**. Não use `latest` para voltar, porque ela sempre aponta para a mais nova. O resumo de cada execução no GitHub (aba Actions) também mostra a versão publicada.
 
-## Secrets por repositório ou por organização
+</details>
 
-Por padrão, a variável e os secrets são cadastrados **por repositório** (é o que os dois caminhos acima fazem). Cadastrar uma vez só na **organização** (`bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh) --org NOME-DA-ORG`, e é preciso ser owner da organização) evita repetir em cada repositório, **mas só funciona em repositórios privados se a organização tiver plano pago**. No plano gratuito, variáveis e secrets de organização só chegam a repositórios públicos. O script avisa quando detecta essa combinação.
+<details>
+<summary><b>Secrets por repositório ou por organização</b></summary>
 
-## Deu erro? Tabela rápida
+Por padrão, a variável e os secrets são cadastrados **por repositório** (é o que o comando e o caminho pelo navegador fazem). Cadastrar uma vez só na **organização** evita repetir em cada repositório. Para isso, rode o mesmo comando com `--org NOME-DA-ORG` no final (é preciso ser owner da organização):
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh) --org NOME-DA-ORG
+```
+
+Isso **só funciona em repositórios privados se a organização tiver plano pago**. No plano gratuito, variáveis e secrets de organização só chegam a repositórios públicos. O script avisa quando detecta essa combinação.
+
+</details>
+
+<details>
+<summary><b>Deu erro? Tabela rápida</b></summary>
 
 | Mensagem no log | O que significa | O que fazer |
 |---|---|---|
@@ -85,3 +117,5 @@ Por padrão, a variável e os secrets são cadastrados **por repositório** (é 
 | `COPY failed: file not found` (no build) | O `context` está apontando para a pasta errada | Troque `context` por `.` (raiz do repositório) |
 | `Tag inválida: ...` | Uma tag tem espaço ou caractere não permitido | Use só letras, números, `_`, `.` e `-` |
 | O workflow não aparece em **Actions** | O arquivo está no lugar errado | Ele precisa estar em `.github/workflows/docker.yml` na branch `main`, e o Actions deve estar habilitado em Settings > Actions |
+
+</details>

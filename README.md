@@ -2,7 +2,13 @@
 
 Build and push a Docker image to your registry with the native Docker CLI, then optionally call a webhook (for example, to trigger a deploy). No third-party actions, no extra dependencies.
 
-> **New to CI/CD?** Follow [INSTALAR.md](INSTALAR.md) (Portuguese, step by step) or run [install.sh](install.sh). Using an AI assistant? Point it to [llms.txt](llms.txt).
+**Fastest setup:** in the root of the repository that should get the CI, with the [GitHub CLI](https://cli.github.com) logged in, run:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)
+```
+
+It asks for the registry address, username and password (plus optional Teams and Portainer webhooks), stores them as GitHub Variable/Secrets, writes `.github/workflows/docker.yml` and offers to commit and push. Step-by-step guide in Portuguese: [INSTALAR.md](INSTALAR.md). Using an AI assistant? Point it to [llms.txt](llms.txt).
 
 ## Requirements
 

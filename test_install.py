@@ -112,8 +112,8 @@ class Sandbox:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
-def answers(host="registry.acme.com", user="ci", password=PASSWORD, hook="", push="n"):
-    return f"{host}\n{user}\n{password}\n{hook}\n{push}\n"
+def answers(host="registry.acme.com", user="ci", password=PASSWORD, hook="", portainer="", push="n"):
+    return f"{host}\n{user}\n{password}\n{hook}\n{portainer}\n{push}\n"
 
 
 class InstallTest(unittest.TestCase):
@@ -148,6 +148,20 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(sb.run(answers(hook="https://hook.acme.com/x")), 0, sb.stdout)
         self.assertEqual(sb.recorded_secrets()["TEAMS_WEBHOOK_URL"], "https://hook.acme.com/x")
         self.assertIn("Teams", sb.stdout)
+        self.assertNotIn("PORTAINER_WEBHOOK_URL", sb.recorded_secrets())
+
+    def test_portainer_secret_only_when_given(self):
+        sb = self.sandbox()
+        url = "https://portainer.acme.com/api/stacks/webhooks/x?tag={version}"
+        self.assertEqual(sb.run(answers(portainer=url)), 0, sb.stdout)
+        self.assertEqual(sb.recorded_secrets()["PORTAINER_WEBHOOK_URL"], url)
+        self.assertIn("Portainer", sb.stdout)
+        self.assertNotIn("TEAMS_WEBHOOK_URL", sb.recorded_secrets())
+
+    def test_ends_with_link_to_the_actions_tab(self):
+        sb = self.sandbox()
+        self.assertEqual(sb.run(answers()), 0, sb.stdout)
+        self.assertIn("https://github.com/acme/app/actions", sb.stdout)
 
     def test_several_dockerfiles_generate_a_matrix_with_unique_names(self):
         sb = self.sandbox(files=("config/docker/Dockerfile", "front/Dockerfile"))

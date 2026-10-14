@@ -126,3 +126,11 @@ class DocsConsistencyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_wizard_command_comes_first(self):
+        # people do not scroll: the one-line installer is the first code block they see
+        command = "bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)"
+        for name in ("INSTALAR.md", "README.md"):
+            text = (ROOT / name).read_text()
+            first_block = re.search(r"```\w*\n(.*?)```", text, re.S).group(1)
+            self.assertIn(command, first_block, f"{name}: o primeiro bloco de código deve ser o comando do install.sh")
