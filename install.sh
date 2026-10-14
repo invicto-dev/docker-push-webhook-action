@@ -78,7 +78,7 @@ IFS= read -r user || user=""
 printf 'Senha ou token do registry (não aparece na tela): '
 IFS= read -rs pass || pass=""
 echo
-printf 'URL do webhook do Teams (Power Automate) (opcional, Enter para pular): '
+printf 'Link do webhook do Teams (opcional, Enter para pular): '
 IFS= read -r hook || hook=""
 [[ -n "${host//[[:space:]]/}" && -n "$user" && -n "$pass" ]] || die "Endereço, usuário e senha do registry são obrigatórios."
 
@@ -196,9 +196,8 @@ EOF
           registry_url: \${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: \${{ secrets.REGISTRY_USERNAME }}
           registry_password: \${{ secrets.REGISTRY_PASSWORD }}
-          webhook_url: |
-            \${{ secrets.TEAMS_WEBHOOK_URL }}
-            \${{ secrets.PORTAINER_WEBHOOK_URL }}
+          teams_webhook_url: \${{ secrets.TEAMS_WEBHOOK_URL }}
+          webhook_url: \${{ secrets.PORTAINER_WEBHOOK_URL }}
 EOF
   if (( count > 1 )); then
     echo '          name: ${{ matrix.name }}'

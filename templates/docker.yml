@@ -13,8 +13,9 @@
 #     REGISTRY_PASSWORD   -> senha ou token do registry
 #                            Docker Hub: REGISTRY_URL=docker.io E, no passo 2,
 #                            adicione  name: SEU_USUARIO/app
-#     TEAMS_WEBHOOK_URL   -> (opcional) fluxo do Power Automate que avisa no
-#                            Teams após o envio. Sem ele, ninguém é avisado.
+#     TEAMS_WEBHOOK_URL   -> (opcional) link do webhook do Teams (app Fluxos de
+#                            trabalho > "Postar em um canal quando uma
+#                            solicitação de webhook for recebida").
 #     PORTAINER_WEBHOOK_URL -> (opcional) webhook do Portainer para deploy
 #                            automático. Para escolher a versão exata, termine
 #                            a URL com ?tag={version}
@@ -62,13 +63,11 @@ jobs:
           registry_url: ${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
-          # Avisos depois do envio, um destino por linha (secret que não existe é ignorado):
-          #   TEAMS_WEBHOOK_URL     -> fluxo do Power Automate que avisa no Teams
-          #   PORTAINER_WEBHOOK_URL -> webhook do Portainer para deploy automático
-          # Cada destino recebe um JSON com versão, digest, commit, autor e link da execução.
-          webhook_url: |
-            ${{ secrets.TEAMS_WEBHOOK_URL }}
-            ${{ secrets.PORTAINER_WEBHOOK_URL }}
+          # Avisos depois do envio (secret que não existe é ignorado):
+          # Teams: recebe um cartão com a versão, o commit, o autor e o link da execução.
+          teams_webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          # Outros destinos (ex.: Portainer, deploy automático) recebem um JSON.
+          webhook_url: ${{ secrets.PORTAINER_WEBHOOK_URL }}
           # name: ${{ matrix.name }}                  # matrix
           # context: ${{ matrix.context }}            # matrix
           # dockerfile_path: ${{ matrix.dockerfile }} # matrix

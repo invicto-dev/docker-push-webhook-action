@@ -87,9 +87,8 @@ jobs:
           dockerfile_path: ${{ matrix.dockerfile }}
           build_args: |
             APP_VERSION=${{ github.sha }}
-          webhook_url: |
-            ${{ secrets.TEAMS_WEBHOOK_URL }}
-            ${{ secrets.PORTAINER_WEBHOOK_URL }}
+          teams_webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          webhook_url: ${{ secrets.PORTAINER_WEBHOOK_URL }}
 ```
 
 ## Tags and rollback
@@ -124,6 +123,7 @@ The job summary shows the version of each run. Custom `tags` replace all three d
 | `dockerfile_path` | no | `<context>/Dockerfile` | Dockerfile path, or a directory containing one. |
 | `build_args` | no | `''` | One `KEY=VALUE` per line. |
 | `webhook_url` | no | `''` | URLs to POST to after a successful push, one per line. Empty lines are ignored; empty skips the webhook. Accepts placeholders (see [Webhooks](#webhooks)). |
+| `teams_webhook_url` | no | `''` | Microsoft Teams Workflows webhook URLs, one per line. Each gets an Adaptive Card (see [Microsoft Teams](#microsoft-teams)). |
 | `webhook_headers` | no | `{}` | JSON object of string headers. Values are masked in logs. |
 | `webhook_payload` | no | `''` | Request body, sent as given with placeholders filled in. Empty sends the default JSON (see [Webhooks](#webhooks)). `Content-Type` defaults to `application/json`. |
 | `webhook_fail_on_error` | no | `true` | Fail the job on network errors, timeouts or non-2xx responses. Invalid `webhook_url`/`webhook_headers` always fail. |
@@ -147,8 +147,8 @@ A summary with the pushed references and the digest is also added to the job sum
 
 ```yaml
 webhook_url: |
-  ${{ secrets.TEAMS_WEBHOOK_URL }}
   ${{ secrets.PORTAINER_WEBHOOK_URL }}
+  ${{ secrets.OTHER_WEBHOOK_URL }}
 ```
 
 Without `webhook_payload`, every destination receives this JSON, built after the push:
@@ -180,7 +180,19 @@ Placeholders, filled in every URL line and in a custom `webhook_payload`:
 
 In URLs the value is URL-encoded. Unknown placeholders are left as they are. Example, a Portainer service webhook that deploys the exact version: store `https://portainer.example.com/api/webhooks/<id>?tag={version}` in `PORTAINER_WEBHOOK_URL`.
 
-For a Power Automate flow ("When an HTTP request is received"), use this request body schema to get every field as dynamic content:
+### Microsoft Teams
+
+Teams channel webhooks (app **Workflows**, template "Post to a channel when a webhook request is received") only accept an Adaptive Card, not arbitrary JSON. Put those URLs in `teams_webhook_url` (one per line) instead of `webhook_url`:
+
+```yaml
+teams_webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+```
+
+Each one receives a card titled "Imagem publicada: <name>" with the version (UTC, for rollback), the full image reference, the commit and its message, the author, the repository and a "Ver execução no GitHub" button. `webhook_headers` are never sent to Teams URLs. The log names them `Teams 1/1`, `Teams 2/2`, and so on.
+
+### Custom Power Automate flows
+
+For your own flow ("When an HTTP request is received") in `webhook_url`, use this request body schema to get every field as dynamic content:
 
 ```json
 {
