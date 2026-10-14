@@ -88,7 +88,7 @@ jobs:
           build_args: |
             APP_VERSION=${{ github.sha }}
           webhook_url: |
-            ${{ secrets.DEPLOY_WEBHOOK_URL }}
+            ${{ secrets.TEAMS_WEBHOOK_URL }}
             ${{ secrets.PORTAINER_WEBHOOK_URL }}
 ```
 
@@ -147,7 +147,7 @@ A summary with the pushed references and the digest is also added to the job sum
 
 ```yaml
 webhook_url: |
-  ${{ secrets.DEPLOY_WEBHOOK_URL }}
+  ${{ secrets.TEAMS_WEBHOOK_URL }}
   ${{ secrets.PORTAINER_WEBHOOK_URL }}
 ```
 

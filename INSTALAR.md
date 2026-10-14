@@ -22,7 +22,7 @@ Na aba **Secrets** (botão **New repository secret**). Ficam escondidos:
 |---|---|
 | `REGISTRY_USERNAME` | usuário do registry |
 | `REGISTRY_PASSWORD` | senha ou token do registry |
-| `DEPLOY_WEBHOOK_URL` | (opcional) endereço avisado depois do envio, para fazer deploy |
+| `TEAMS_WEBHOOK_URL` | (opcional) endereço do fluxo do Power Automate que avisa no Teams depois do envio |
 | `PORTAINER_WEBHOOK_URL` | (opcional) webhook do Portainer para deploy automático. Para subir a versão exata, termine a URL com `?tag={version}` |
 
 Se você cadastrar o `REGISTRY_URL` como Secret em vez de Variable, também funciona. A diferença é que o GitHub esconde o endereço (`***`) nos logs e no resumo.
@@ -51,7 +51,7 @@ Em seguida, confira o campo `context` de cada imagem no arquivo criado: se o bui
 
 ## Avisar o Teams e o Portainer
 
-Depois de cada envio, a action avisa cada endereço cadastrado em `DEPLOY_WEBHOOK_URL` (por exemplo, o fluxo do Power Automate que posta no Teams) e em `PORTAINER_WEBHOOK_URL` (deploy automático). Quem não estiver cadastrado é simplesmente pulado, então dá para criar o do Portainer depois, sem mexer no workflow.
+Depois de cada envio, a action avisa cada endereço cadastrado em `TEAMS_WEBHOOK_URL` (o fluxo do Power Automate que posta no Teams) e em `PORTAINER_WEBHOOK_URL` (deploy automático). Quem não estiver cadastrado é simplesmente pulado, então dá para criar o do Portainer depois, sem mexer no workflow.
 
 Cada aviso leva a versão (`2026.10.14-1532Z-c14ae67`), o commit, quem fez, a mensagem do commit e o link da execução. No Power Automate, use esses campos para montar a mensagem do Teams (o README tem o esquema JSON para o gatilho).
 

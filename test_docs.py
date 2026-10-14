@@ -9,7 +9,7 @@ SECRETS = {
     "REGISTRY_URL",
     "REGISTRY_USERNAME",
     "REGISTRY_PASSWORD",
-    "DEPLOY_WEBHOOK_URL",
+    "TEAMS_WEBHOOK_URL",
     "PORTAINER_WEBHOOK_URL",
     "DEPLOY_TOKEN",
     "GITHUB_TOKEN",
@@ -84,6 +84,12 @@ class DocsConsistencyTest(unittest.TestCase):
             text = (ROOT / name).read_text()
             for message in SHARED_MESSAGES + DOC_ERRORS:
                 self.assertIn(message, text, f"{name} não explica o erro: {message}")
+
+    def test_docs_use_one_name_for_the_teams_webhook(self):
+        for name in ("README.md", "llms.txt", "INSTALAR.md", "templates/docker.yml", "install.sh"):
+            text = (ROOT / name).read_text()
+            self.assertNotIn("DEPLOY_WEBHOOK_URL", text, f"{name}: use TEAMS_WEBHOOK_URL")
+            self.assertIn("TEAMS_WEBHOOK_URL", text, name)
 
     def test_docs_describe_the_default_webhook_payload(self):
         fields = ["repository", "image", "version", "tags", "digest", "commit", "commit_message", "author", "run_url"]
