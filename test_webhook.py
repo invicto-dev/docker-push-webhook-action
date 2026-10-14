@@ -245,6 +245,29 @@ class WebhookTest(unittest.TestCase):
         self.run_webhook(payload=payload, env=env)
         self.assertEqual(self.server.received[0][1], b'{"v": "v9", "i": "r/app", "s": "abc", "e": "", "x": "{foo}"}')
 
+    def test_non_ascii_url_among_valid_ones_sends_nothing(self):
+        port = self.server.server_port
+        urls = f"{self.url(200)}\nhttp://127.0.0.1:{port}/a\u00e7\u00e3o\n{self.url(200)}"
+        result = self.run_webhook(url=urls, fail_on_error="false")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("::error::webhook_url", result.stdout)
+        self.assertEqual(self.server.received, [])
+
+    def test_url_failing_only_at_send_time_does_not_stop_the_others(self):
+        # "a..b" passes validation but the request itself raises (empty host label)
+        result = self.run_webhook(url=f"http://a..b/\n{self.url(200)}", fail_on_error="false")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.server.paths, ["/200"])
+        self.assertIn("::warning::Webhook 1/2 falhou:", result.stdout)
+        self.assertNotIn("webhook_headers", result.stdout)
+
+    def test_commit_message_that_is_not_utf8_still_notifies(self):
+        # git converts a Latin-1 message to UTF-8 when committing, so it arrives intact
+        sha = make_commit(self.tmp.name, b"feat: a\xe7\xe3o", "Ana Souza")
+        result = self.run_webhook(env=dict(self.RUN_ENV, GITHUB_SHA=sha, WEBHOOK_REFS="r/app:latest"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(self.server.received[0][1])["commit_message"], "feat: ação")
+
     def test_urls_with_placeholders_are_never_logged(self):
         urls = f"{self.url(500)}?token=topsecret\n{self.url(200)}?tag={{version}}&token=topsecret"
         result = self.run_webhook(url=urls, env={"WEBHOOK_VERSION": "v1"})

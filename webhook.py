@@ -49,10 +49,16 @@ def parse_headers(raw):
             fail("webhook_headers: keys must be valid header names and values must be strings")
         if any(ch in key + value for ch in "\r\n"):
             fail("webhook_headers: keys and values must not contain line breaks")
+        try:
+            value.encode("latin-1")
+        except UnicodeEncodeError:
+            fail("webhook_headers: values must be Latin-1 text")
     return headers
 
 
 def validate_url(url):
+    if not url.isascii():
+        fail("webhook_url must contain only ASCII characters; percent-encode the rest")
     try:
         parts = urllib.parse.urlsplit(url)
         valid = parts.scheme in ("http", "https") and bool(parts.hostname)
@@ -152,12 +158,10 @@ def main():
         label = f"Webhook {index}/{len(urls)}"
         try:
             status = send(url, headers, payload)
-        except ValueError:
-            fail("webhook_headers contains an invalid header name or value")
         except urllib.error.HTTPError as error:
             failures.append(f"{label} falhou: HTTP {error.code}")
             continue
-        except (OSError, http.client.HTTPException) as error:
+        except (OSError, ValueError, http.client.HTTPException) as error:
             # Only the type: exception text can echo parts of the URL or the response.
             reason = getattr(error, "reason", error)
             failures.append(f"{label} falhou: {type(reason).__name__}")
