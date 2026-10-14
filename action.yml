@@ -20,7 +20,7 @@ inputs:
     required: false
     default: ''
   tags:
-    description: Tags separated by commas and/or newlines. Empty means "latest" plus the commit SHA.
+    description: Tags separated by commas and/or newlines. Empty means "latest", the full commit SHA and a version tag like 2026.10.14-1532Z-c14ae67 (commit date in UTC + short SHA).
     required: false
     default: ''
   context:
@@ -62,6 +62,9 @@ outputs:
   digest:
     description: Digest of the pushed image (sha256:...).
     value: ${{ steps.push.outputs.digest }}
+  version:
+    description: Version tag (e.g. 2026.10.14-1532Z-c14ae67, commit date in UTC + short SHA). Empty when custom tags are given.
+    value: ${{ steps.prepare.outputs.version }}
 
 runs:
   using: composite
@@ -131,6 +134,7 @@ runs:
       env:
         DOCKER_CONFIG: ${{ steps.prepare.outputs.docker_config }}
         REFS: ${{ steps.prepare.outputs.refs }}
+        VERSION: ${{ steps.prepare.outputs.version }}
       run: |
         set -euo pipefail
         digest_re='digest: (sha256:[0-9a-f]{64})'
@@ -153,6 +157,10 @@ runs:
           {
             echo "### Imagem publicada"
             echo
+            if [[ -n "$VERSION" ]]; then
+              echo "Versão: \`$VERSION\` (data do commit em UTC + commit curto). Para rollback, use a versão anterior a esta."
+              echo
+            fi
             while read -r ref; do echo "- \`$ref\`"; done <<< "$REFS"
             echo
             echo "Digest: \`${digest:-indisponível}\`"

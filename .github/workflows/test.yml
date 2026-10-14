@@ -175,10 +175,16 @@ jobs:
         env:
           SHA: ${{ github.sha }}
           REPO: ${{ github.event.repository.name }}
+          VERSION: ${{ steps.defaults.outputs.version }}
+          UPPER_VERSION: ${{ steps.uppercase_name.outputs.version }}
         run: |
           set -euo pipefail
           repo="$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')"
+          expected="$(TZ=UTC git log -1 --date='format-local:%Y.%m.%d-%H%M' --format=%cd "$SHA")Z-${SHA:0:7}"
+          [[ "$VERSION" == "$expected" ]] || { echo "version '$VERSION' != '$expected'"; exit 1; }
+          [[ -z "$UPPER_VERSION" ]]
           echo test-pass | docker login localhost:5000 -u test --password-stdin
           docker pull "localhost:5000/$repo:latest"
           docker pull "localhost:5000/$repo:$SHA"
+          docker pull "localhost:5000/$repo:$VERSION"
           docker pull localhost:5000/e2e-upper:v1

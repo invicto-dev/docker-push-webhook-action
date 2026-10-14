@@ -27,14 +27,30 @@ def parse_outputs(text):
     return outputs
 
 
-def run_prepare(files=("Dockerfile",), **env_overrides):
-    """Runs prepare.sh in a temp dir. Returns (returncode, stdout+stderr, outputs)."""
+def git_commit(repo, committer_date):
+    """Commits everything in repo with a fixed committer date; returns the commit SHA."""
+    env = dict(os.environ, GIT_COMMITTER_DATE=committer_date, GIT_AUTHOR_DATE=committer_date)
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+    subprocess.run(git + ["init", "-q"], cwd=repo, check=True, env=env)
+    subprocess.run(git + ["add", "-A"], cwd=repo, check=True, env=env)
+    subprocess.run(git + ["commit", "-q", "-m", "c"], cwd=repo, check=True, env=env)
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def run_prepare(files=("Dockerfile",), commit_date=None, **env_overrides):
+    """Runs prepare.sh in a temp dir. Returns (returncode, stdout+stderr, outputs).
+
+    With commit_date, the temp dir becomes a git repo and GITHUB_SHA is its commit."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         for name in files:
             path = tmp / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("FROM scratch\n")
+        if commit_date:
+            env_overrides.setdefault("GITHUB_SHA", git_commit(tmp, commit_date))
         out_file = tmp / "github_output"
         out_file.touch()
         env = {
@@ -63,12 +79,32 @@ class DefaultsTest(unittest.TestCase):
         rc, out, o = run_prepare()
         self.assertEqual(rc, 0, out)
         self.assertEqual(o["registry"], "registry.example.com")
-        self.assertEqual(
-            o["refs"],
-            "registry.example.com/my-repo:latest\nregistry.example.com/my-repo:abc123",
-        )
+        latest, full_sha, version = o["refs"].split("\n")
+        self.assertEqual(latest, "registry.example.com/my-repo:latest")
+        self.assertEqual(full_sha, "registry.example.com/my-repo:abc123")
+        # no git history here: falls back to the build time (UTC) and says so
+        self.assertRegex(version, r"^registry\.example\.com/my-repo:\d{4}\.\d{2}\.\d{2}-\d{4}Z-abc123$")
+        self.assertEqual(version.split(":", 1)[1], o["version"])
+        self.assertIn("hora do build", out)
         self.assertEqual(o["dockerfile"], "./Dockerfile")
         self.assertTrue(o["docker_config"])
+
+
+class VersionTagTest(unittest.TestCase):
+    def test_version_tag_is_commit_date_in_utc_plus_short_sha(self):
+        # 15:32:59 UTC is 12:32 in Sao Paulo: the tag must not follow the local timezone
+        rc, out, o = run_prepare(commit_date="2026-10-14T15:32:59Z", TZ="America/Sao_Paulo")
+        self.assertEqual(rc, 0, out)
+        sha = o["refs"].split("\n")[1].rsplit(":", 1)[1]
+        self.assertEqual(o["version"], f"2026.10.14-1532Z-{sha[:7]}")
+        self.assertTrue(o["refs"].endswith(f":2026.10.14-1532Z-{sha[:7]}"))
+        self.assertNotIn("hora do build", out)
+
+    def test_custom_tags_have_no_version_tag(self):
+        rc, out, o = run_prepare(commit_date="2026-10-14T15:32:59Z", TAGS="v1")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(o["refs"], "registry.example.com/my-repo:v1")
+        self.assertEqual(o["version"], "")
 
 
 class RegistryTest(unittest.TestCase):

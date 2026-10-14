@@ -21,7 +21,7 @@ A Linux runner with Docker and Python 3, such as `ubuntu-latest`. GitHub-hosted 
     registry_password: ${{ secrets.REGISTRY_PASSWORD }}
 ```
 
-Pushes `<registry_url>/<repository name>` with the tags `latest` and the commit SHA.
+Pushes `<registry_url>/<repository name>` with three tags: `latest`, the full commit SHA and a version tag such as `2026.10.14-1532Z-c14ae67` (see [Tags and rollback](#tags-and-rollback)).
 
 `REGISTRY_URL` is not a secret: store it as a repository **Variable** so the registry host shows up in logs and in the job summary (a Secret works too, but GitHub masks it as `***`). The `vars.REGISTRY_URL || secrets.REGISTRY_URL` expression accepts either. Keep the username and password as Secrets.
 
@@ -92,6 +92,25 @@ jobs:
           webhook_payload: '{"image": "${{ matrix.name }}"}'
 ```
 
+## Tags and rollback
+
+With the default `tags`, every image gets three tags:
+
+| Tag | Example | Use it for |
+|---|---|---|
+| `latest` | `latest` | "the newest build". It moves on every build, so never roll back to it. |
+| full commit SHA | `c14ae67b85586abfa9fa7fbed1998d35bb9719d8` | exact traceability and deploy tools that pin by SHA. |
+| version | `2026.10.14-1532Z-c14ae67` | **rollback**. Pick the version right before the broken one. |
+
+The version tag is `YYYY.MM.DD-HHMMZ-<short SHA>`:
+
+- The date and time are the **commit date in UTC** (the `Z` means UTC; Brasília is UTC-3, so `1532Z` is 12:32 in Brasília).
+- Alphabetical order is chronological order, so the registry list is already sorted by time.
+- It comes from the commit, not from the build, so every image of the same commit (matrix jobs, re-runs) gets the same version tag.
+- Without git history for the commit (no `actions/checkout`), the build time in UTC is used and the log says so.
+
+The job summary shows the version of each run. Custom `tags` replace all three defaults (the `version` output is then empty).
+
 ## Inputs
 
 | Input | Required | Default | Description |
@@ -100,7 +119,7 @@ jobs:
 | `registry_username` | yes | | Registry username. |
 | `registry_password` | yes | | Registry password or token. Sent via stdin. |
 | `name` | no | repository name | Short image name without registry or tag (e.g. `my-app`, `team/my-app`). Lowercased automatically. |
-| `tags` | no | `latest` and the commit SHA | Tags separated by commas and/or newlines. |
+| `tags` | no | `latest`, the commit SHA and the version tag | Tags separated by commas and/or newlines. Setting it replaces all three defaults. |
 | `context` | no | `.` | Build context. |
 | `dockerfile_path` | no | `<context>/Dockerfile` | Dockerfile path, or a directory containing one. |
 | `build_args` | no | `''` | One `KEY=VALUE` per line. |
@@ -117,6 +136,7 @@ The pushed image is `<registry_url>/<name>:<tag>`. Validation errors are written
 |---|---|
 | `image` | First pushed reference (`image:tag`). |
 | `tags` | All pushed references, one per line. |
+| `version` | Version tag, e.g. `2026.10.14-1532Z-c14ae67`. Empty when `tags` is set. |
 | `digest` | Digest of the pushed image (`sha256:...`). |
 
 A summary with the pushed references and the digest is also added to the job summary.
@@ -124,7 +144,7 @@ A summary with the pushed references and the digest is also added to the job sum
 ## Webhook behavior
 
 - Always `POST`, 30-second timeout. Redirects are not followed and count as failures.
-- The webhook runs only after a successful push and cannot reference this action's own outputs. Image and tags are already known to the caller. The digest is not available inside the payload.
+- The webhook runs only after a successful push and cannot reference this action's own outputs. Image and the `latest`/SHA tags are already known to the caller; the version tag and the digest are not available inside the payload (read them from the `version`/`digest` outputs in a later step).
 - URL, headers, payload and response body are never printed in the logs.
 - `webhook_url` must not embed credentials (`https://user:pass@host`); send them in `webhook_headers` instead.
 
