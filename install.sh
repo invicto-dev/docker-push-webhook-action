@@ -78,7 +78,7 @@ IFS= read -r user || user=""
 printf 'Senha ou token do registry (não aparece na tela): '
 IFS= read -rs pass || pass=""
 echo
-printf 'URL do webhook de deploy (opcional, Enter para pular): '
+printf 'URL do webhook do Teams (Power Automate) (opcional, Enter para pular): '
 IFS= read -r hook || hook=""
 [[ -n "${host//[[:space:]]/}" && -n "$user" && -n "$pass" ]] || die "Endereço, usuário e senha do registry são obrigatórios."
 
@@ -105,7 +105,7 @@ set_variable() {
 set_variable REGISTRY_URL "$host"
 set_secret REGISTRY_USERNAME "$user"
 set_secret REGISTRY_PASSWORD "$pass"
-if [[ -n "$hook" ]]; then set_secret DEPLOY_WEBHOOK_URL "$hook"; fi
+if [[ -n "$hook" ]]; then set_secret TEAMS_WEBHOOK_URL "$hook"; fi
 
 # Image name from the Dockerfile folder: "config/docker" -> "config-docker".
 # Always a valid Docker name (lowercase letters, digits, single dashes, starting
@@ -197,7 +197,7 @@ EOF
           registry_username: \${{ secrets.REGISTRY_USERNAME }}
           registry_password: \${{ secrets.REGISTRY_PASSWORD }}
           webhook_url: |
-            \${{ secrets.DEPLOY_WEBHOOK_URL }}
+            \${{ secrets.TEAMS_WEBHOOK_URL }}
             \${{ secrets.PORTAINER_WEBHOOK_URL }}
 EOF
   if (( count > 1 )); then

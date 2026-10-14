@@ -17,7 +17,7 @@ Cadastro **por repositório** (padrão): Settings > Secrets and variables > Acti
 - `REGISTRY_URL` (Variable; também funciona como Secret): endereço do registry, ex. `registry.empresa.com` (para Docker Hub, `docker.io`; nesse caso o input `name` precisa ser `SEU_USUARIO/app`, senão a action falha)
 - `REGISTRY_USERNAME` (Secret): usuário
 - `REGISTRY_PASSWORD` (Secret): senha ou token
-- `DEPLOY_WEBHOOK_URL` (Secret): opcional
+- `TEAMS_WEBHOOK_URL` (Secret): opcional; fluxo do Power Automate que avisa no Teams
 - `PORTAINER_WEBHOOK_URL` (Secret): opcional; webhook do Portainer para deploy automático. Para a versão exata, termine com `?tag={version}`
 
 Cadastro por **organização** só funciona em repositórios privados com plano pago; no plano gratuito vale apenas para repositórios públicos. Na dúvida, cadastre por repositório.
@@ -44,7 +44,7 @@ jobs:
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
           webhook_url: |
-            ${{ secrets.DEPLOY_WEBHOOK_URL }}
+            ${{ secrets.TEAMS_WEBHOOK_URL }}
             ${{ secrets.PORTAINER_WEBHOOK_URL }}
 ```
 

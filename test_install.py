@@ -146,7 +146,8 @@ class InstallTest(unittest.TestCase):
     def test_webhook_secret_only_when_given(self):
         sb = self.sandbox()
         self.assertEqual(sb.run(answers(hook="https://hook.acme.com/x")), 0, sb.stdout)
-        self.assertEqual(sb.recorded_secrets()["DEPLOY_WEBHOOK_URL"], "https://hook.acme.com/x")
+        self.assertEqual(sb.recorded_secrets()["TEAMS_WEBHOOK_URL"], "https://hook.acme.com/x")
+        self.assertIn("Teams", sb.stdout)
 
     def test_several_dockerfiles_generate_a_matrix_with_unique_names(self):
         sb = self.sandbox(files=("config/docker/Dockerfile", "front/Dockerfile"))

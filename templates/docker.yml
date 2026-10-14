@@ -13,8 +13,8 @@
 #     REGISTRY_PASSWORD   -> senha ou token do registry
 #                            Docker Hub: REGISTRY_URL=docker.io E, no passo 2,
 #                            adicione  name: SEU_USUARIO/app
-#     DEPLOY_WEBHOOK_URL  -> (opcional) endereço avisado após o envio, para
-#                            fazer deploy automático. Sem ele, nada é avisado.
+#     TEAMS_WEBHOOK_URL   -> (opcional) fluxo do Power Automate que avisa no
+#                            Teams após o envio. Sem ele, ninguém é avisado.
 #     PORTAINER_WEBHOOK_URL -> (opcional) webhook do Portainer para deploy
 #                            automático. Para escolher a versão exata, termine
 #                            a URL com ?tag={version}
@@ -63,11 +63,11 @@ jobs:
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
           # Avisos depois do envio, um destino por linha (secret que não existe é ignorado):
-          #   DEPLOY_WEBHOOK_URL    -> ex.: fluxo do Power Automate que avisa no Teams
+          #   TEAMS_WEBHOOK_URL     -> fluxo do Power Automate que avisa no Teams
           #   PORTAINER_WEBHOOK_URL -> webhook do Portainer para deploy automático
           # Cada destino recebe um JSON com versão, digest, commit, autor e link da execução.
           webhook_url: |
-            ${{ secrets.DEPLOY_WEBHOOK_URL }}
+            ${{ secrets.TEAMS_WEBHOOK_URL }}
             ${{ secrets.PORTAINER_WEBHOOK_URL }}
           # name: ${{ matrix.name }}                  # matrix
           # context: ${{ matrix.context }}            # matrix
