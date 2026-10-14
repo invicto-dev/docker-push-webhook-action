@@ -10,6 +10,7 @@ SECRETS = {
     "REGISTRY_USERNAME",
     "REGISTRY_PASSWORD",
     "DEPLOY_WEBHOOK_URL",
+    "PORTAINER_WEBHOOK_URL",
     "DEPLOY_TOKEN",
     "GITHUB_TOKEN",
 }
@@ -83,6 +84,18 @@ class DocsConsistencyTest(unittest.TestCase):
             text = (ROOT / name).read_text()
             for message in SHARED_MESSAGES + DOC_ERRORS:
                 self.assertIn(message, text, f"{name} não explica o erro: {message}")
+
+    def test_docs_describe_the_default_webhook_payload(self):
+        fields = ["repository", "image", "version", "tags", "digest", "commit", "commit_message", "author", "run_url"]
+        for name in ("README.md", "llms.txt"):
+            text = (ROOT / name).read_text()
+            for field in fields:
+                self.assertIn(f'"{field}"', text, f"{name}: corpo padrão sem o campo {field}")
+            self.assertIn("{version}", text, f"{name}: sem o marcador {{version}}")
+            self.assertIn("PORTAINER_WEBHOOK_URL", text, name)
+        for name in ("templates/docker.yml",):
+            text = (ROOT / name).read_text()
+            self.assertIn("secrets.PORTAINER_WEBHOOK_URL", text, name)
 
     def test_docs_explain_the_version_tag(self):
         for name in ("README.md", "INSTALAR.md", "llms.txt"):

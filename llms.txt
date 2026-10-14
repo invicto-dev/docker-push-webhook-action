@@ -18,6 +18,7 @@ Cadastro **por repositório** (padrão): Settings > Secrets and variables > Acti
 - `REGISTRY_USERNAME` (Secret): usuário
 - `REGISTRY_PASSWORD` (Secret): senha ou token
 - `DEPLOY_WEBHOOK_URL` (Secret): opcional
+- `PORTAINER_WEBHOOK_URL` (Secret): opcional; webhook do Portainer para deploy automático. Para a versão exata, termine com `?tag={version}`
 
 Cadastro por **organização** só funciona em repositórios privados com plano pago; no plano gratuito vale apenas para repositórios públicos. Na dúvida, cadastre por repositório.
 
@@ -42,7 +43,9 @@ jobs:
           registry_url: ${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}
           registry_username: ${{ secrets.REGISTRY_USERNAME }}
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
-          webhook_url: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          webhook_url: |
+            ${{ secrets.DEPLOY_WEBHOOK_URL }}
+            ${{ secrets.PORTAINER_WEBHOOK_URL }}
 ```
 
 Para vários Dockerfiles, use `strategy.matrix.include` com `name`, `context` e `dockerfile`, e passe `name: ${{ matrix.name }}`, `context: ${{ matrix.context }}`, `dockerfile_path: ${{ matrix.dockerfile }}` à action. Modelo completo em `templates/docker.yml`.
@@ -59,9 +62,9 @@ Para vários Dockerfiles, use `strategy.matrix.include` com `name`, `context` e 
 | `context` | não | `.` | Contexto do build |
 | `dockerfile_path` | não | `<context>/Dockerfile` | Arquivo ou pasta do Dockerfile |
 | `build_args` | não | | Um `CHAVE=VALOR` por linha. Nunca coloque segredos aqui |
-| `webhook_url` | não | | POST após o push; vazio pula |
+| `webhook_url` | não | | URLs para POST após o push, uma por linha; linhas vazias são ignoradas; aceita marcadores |
 | `webhook_headers` | não | `{}` | Objeto JSON de strings |
-| `webhook_payload` | não | | Corpo enviado como está |
+| `webhook_payload` | não | | Corpo enviado como está, com marcadores preenchidos; vazio = JSON padrão (ver Webhooks) |
 | `webhook_fail_on_error` | não | `true` | Falha o job se o webhook falhar |
 
 A imagem final é `<registry_url>/<name>:<tag>`. Outputs: `image`, `tags`, `digest`, `version`.
@@ -74,6 +77,29 @@ Sem `tags`, cada imagem recebe 3 tags: `latest`, o SHA completo do commit e a **
 - Ordem alfabética = ordem cronológica. Para rollback, use a tag de versão anterior à que deu problema; nunca `latest`.
 - Todas as imagens do mesmo commit recebem a mesma tag de versão.
 - Ao explicar para pessoas, sempre diga que a hora é UTC.
+
+## Webhooks
+
+`webhook_url` aceita uma URL por linha; cada uma recebe um `POST` depois do push. Secret inexistente vira linha vazia e é ignorado. Sem `webhook_payload`, todos recebem este JSON:
+
+```json
+{
+  "repository": "acme/app",
+  "image": "registry.example.com/app",
+  "version": "2026.10.14-1532Z-c14ae67",
+  "tags": ["latest", "c14ae67b85586abfa9fa7fbed1998d35bb9719d8", "2026.10.14-1532Z-c14ae67"],
+  "digest": "sha256:15b6ff52…",
+  "commit": "c14ae67b85586abfa9fa7fbed1998d35bb9719d8",
+  "commit_message": "fix: retry connector login",
+  "author": "Ana Souza",
+  "run_url": "https://github.com/acme/app/actions/runs/123456789"
+}
+```
+
+Marcadores na URL e no payload customizado: `{version}`, `{digest}`, `{image}`, `{sha}`. Se um destino falhar, os outros ainda são chamados; o log identifica só a posição (`Webhook 2/2 falhou: HTTP 500`).
+
+- Não escreva `webhook_payload` se o JSON padrão serve (ele já leva a versão, que um payload escrito no YAML não consegue levar).
+- O cartão do Teams é montado no fluxo do Power Automate, a partir desses campos; a action não formata mensagens.
 
 ## Regras para a IA
 

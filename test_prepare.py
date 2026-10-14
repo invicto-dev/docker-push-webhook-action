@@ -79,6 +79,7 @@ class DefaultsTest(unittest.TestCase):
         rc, out, o = run_prepare()
         self.assertEqual(rc, 0, out)
         self.assertEqual(o["registry"], "registry.example.com")
+        self.assertEqual(o["image"], "registry.example.com/my-repo")
         latest, full_sha, version = o["refs"].split("\n")
         self.assertEqual(latest, "registry.example.com/my-repo:latest")
         self.assertEqual(full_sha, "registry.example.com/my-repo:abc123")

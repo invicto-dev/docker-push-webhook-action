@@ -44,15 +44,16 @@ jobs:
           class Handler(http.server.BaseHTTPRequestHandler):
               def do_POST(self):
                   body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
-                  record = {"headers": {k.lower(): v for k, v in self.headers.items()}, "body": body.decode()}
-                  with open(sys.argv[1], "w") as f:
+                  record = {"path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}, "body": body.decode()}
+                  name = self.path.split("?")[0].strip("/").replace("/", "-") or "root"
+                  with open(f"{sys.argv[1]}-{name}.json", "w") as f:
                       json.dump(record, f)
                   self.send_response(204)
                   self.end_headers()
 
           http.server.HTTPServer(("127.0.0.1", 8080), Handler).serve_forever()
           PY
-          nohup python3 "$RUNNER_TEMP/listener.py" "$RUNNER_TEMP/webhook.json" >/dev/null 2>&1 &
+          nohup python3 "$RUNNER_TEMP/listener.py" "$RUNNER_TEMP/webhook" >/dev/null 2>&1 &
 
       - id: action
         uses: ./
@@ -93,14 +94,14 @@ jobs:
 
       - name: Assert webhook
         run: |
-          python3 - "$RUNNER_TEMP/webhook.json" <<'PY'
+          python3 - "$RUNNER_TEMP/webhook-deploy.json" <<'PY'
           import json, sys
           got = json.load(open(sys.argv[1]))
           assert got["headers"]["x-test-token"] == "abc123", "missing X-Test-Token header"
           assert got["headers"]["content-type"] == "application/json", got["headers"]
           assert got["body"] == '{"msg": "aspas \\" e \'simples\' $(whoami)"}', got["body"]
           PY
-          rm "$RUNNER_TEMP/webhook.json"
+          rm "$RUNNER_TEMP/webhook-deploy.json"
 
       - id: bad_tag
         uses: ./
@@ -132,7 +133,7 @@ jobs:
         run: |
           [[ "$BAD_TAG" == "failure" ]]
           [[ "$MISSING_REGISTRY" == "failure" ]]
-          [[ ! -e "$RUNNER_TEMP/webhook.json" ]]
+          [[ ! -e "$RUNNER_TEMP/webhook-deploy.json" ]]
 
       - id: injected_name
         uses: ./
@@ -159,6 +160,10 @@ jobs:
           registry_password: test-pass
           dockerfile_path: test
           build_args: GREETING=defaults
+          webhook_url: |
+            http://127.0.0.1:8080/a?tag={version}
+
+            http://127.0.0.1:8080/b
 
       - id: uppercase_name
         uses: ./
@@ -187,4 +192,32 @@ jobs:
           docker pull "localhost:5000/$repo:latest"
           docker pull "localhost:5000/$repo:$SHA"
           docker pull "localhost:5000/$repo:$VERSION"
+
+      - name: Assert default webhook payload
+        env:
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.event.repository.name }}
+          VERSION: ${{ steps.defaults.outputs.version }}
+          DIGEST: ${{ steps.defaults.outputs.digest }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json, os, sys
+          tmp = sys.argv[1]
+          a = json.load(open(f"{tmp}/webhook-a.json"))
+          b = json.load(open(f"{tmp}/webhook-b.json"))
+          assert a["body"] == b["body"], "both destinations must get the same body"
+          assert a["path"] == "/a?tag=" + os.environ["VERSION"], a["path"]
+          assert a["headers"]["content-type"] == "application/json", a["headers"]
+          body = json.loads(a["body"])
+          sha = os.environ["SHA"]
+          assert body["image"] == "localhost:5000/" + os.environ["REPO"].lower(), body
+          assert body["version"] == os.environ["VERSION"], body
+          assert body["digest"] == os.environ["DIGEST"], body
+          assert body["tags"] == ["latest", sha, os.environ["VERSION"]], body
+          assert body["commit"] == sha, body
+          assert body["commit_message"], body
+          assert body["author"], body
+          assert body["run_url"].endswith("/actions/runs/" + os.environ["RUN_ID"]), body
+          PY
           docker pull localhost:5000/e2e-upper:v1
