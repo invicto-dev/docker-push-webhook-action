@@ -8,7 +8,7 @@ Build and push a Docker image to your registry with the native Docker CLI, then 
 bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh)
 ```
 
-It asks for the registry address, username and password (plus optional Teams and Portainer webhooks), stores them as GitHub Variable/Secrets, writes `.github/workflows/docker.yml` and offers to commit and push. Step-by-step guide in Portuguese: [INSTALAR.md](INSTALAR.md). Using an AI assistant? Point it to [llms.txt](llms.txt).
+It asks for the registry address, username and password (plus optional Teams and Portainer webhooks), stores them as GitHub Variable/Secrets and writes `.github/workflows/docker.yml` from [templates/docker.yml](templates/docker.yml) on your default branch. The template builds `./Dockerfile`; for other layouts, fill in `context`/`dockerfile_path` (or the matrix block). Answer yes to "Vai usar uma IA?" and it drops [llms.txt](llms.txt) next to the workflow for your assistant to do it. On Windows, run it in Git Bash. Step-by-step guide in Portuguese: [INSTALAR.md](INSTALAR.md). Using an AI assistant? Point it to [llms.txt](llms.txt).
 
 ## Requirements
 

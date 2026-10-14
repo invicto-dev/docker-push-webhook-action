@@ -15,15 +15,22 @@ Funciona em qualquer repositório: é só entrar na pasta dele antes (`cd caminh
 3. senha ou token do registry (não aparece na tela)
 4. link do webhook do Teams (opcional, Enter para pular)
 5. webhook do Portainer para deploy automático (opcional, Enter para pular)
-6. se pode fazer commit e push
+6. se você vai usar uma IA (se sim, ele traz as instruções da action para ela)
+7. se pode fazer commit e push
 
 Ele cadastra tudo no GitHub, cria `.github/workflows/docker.yml` e mostra o link para acompanhar a publicação. Nada é enviado sem você confirmar.
 
-**Antes, uma vez só:** instale e logue o [GitHub CLI](https://cli.github.com): `brew install gh` e depois `gh auth login`. Você precisa ser **admin** do repositório no GitHub (em repositório pessoal, ser o dono).
+**Antes, uma vez só:** instale o [GitHub CLI](https://cli.github.com) e faça login com `gh auth login`. Você precisa ser **admin** do repositório no GitHub (em repositório pessoal, ser o dono).
+
+| Sistema | Instalar o GitHub CLI | Onde rodar o comando |
+|---|---|---|
+| macOS | `brew install gh` | Terminal |
+| Windows | `winget install --id GitHub.cli` | **Git Bash** (vem com o [Git para Windows](https://git-scm.com/download/win)). Não funciona no PowerShell nem no CMD |
+| Linux | pelo [repositório oficial](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) (o `gh` do `apt` do Ubuntu 22.04 é antigo demais) | Terminal |
 
 Quer ler o script antes de rodar? Abra [install.sh](install.sh): ele é curto.
 
-Depois de rodar, confira o campo `context` de cada imagem no arquivo criado: se o build falhar procurando arquivos, troque por `.`.
+**O Dockerfile não está na raiz, ou são várias imagens?** O arquivo criado assume um `Dockerfile` na raiz. Nos outros casos o script mostra os Dockerfiles que achou e não faz commit: abra `.github/workflows/docker.yml` e preencha `context` e `dockerfile_path` (ou o bloco de várias imagens, explicado no próprio arquivo). Se respondeu que usa IA, é só pedir: *"Leia .github/docker-push-webhook-action.llms.txt e ajuste .github/workflows/docker.yml para os Dockerfiles deste repositório."*
 
 ---
 

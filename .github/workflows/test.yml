@@ -18,6 +18,16 @@ jobs:
           echo "$PWD" >> "$GITHUB_PATH"
       - run: python3 -m unittest -v
 
+  # install.sh on Windows runs in Git Bash, the shell people are told to use
+  install-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m unittest test_install -v
+
   e2e:
     runs-on: ubuntu-latest
     steps:
