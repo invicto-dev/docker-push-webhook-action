@@ -94,11 +94,12 @@ class Sandbox:
             [BASH, str(script), *args],
             cwd=self.repo,
             env=self.env,
-            input=answers,
+            # bytes, not text: on Windows text mode turns "\n" into "\r\n" and decodes as cp1252,
+            # which a person typing in Git Bash never produces
+            input=answers.encode(),
             capture_output=True,
-            text=True,
         )
-        self.stdout = proc.stdout + proc.stderr
+        self.stdout = (proc.stdout + proc.stderr).decode("utf-8")
         return proc.returncode
 
     def git(self, *args):
