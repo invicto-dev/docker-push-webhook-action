@@ -36,7 +36,7 @@ inputs:
     required: false
     default: ''
   webhook_url:
-    description: URL to POST to after a successful push. Empty skips the webhook.
+    description: URLs to POST to after a successful push, one per line (empty lines are ignored). Accepts {version}, {digest}, {image} and {sha} placeholders. Empty skips the webhook.
     required: false
     default: ''
   webhook_headers:
@@ -44,7 +44,7 @@ inputs:
     required: false
     default: '{}'
   webhook_payload:
-    description: Webhook body, sent exactly as given. Empty sends no body.
+    description: Webhook body, sent as given with {version}, {digest}, {image} and {sha} filled in. Empty sends a JSON body describing the push (repository, image, version, tags, digest, commit, commit_message, author, run_url).
     required: false
     default: ''
   webhook_fail_on_error:
@@ -175,6 +175,10 @@ runs:
         WEBHOOK_HEADERS: ${{ inputs.webhook_headers }}
         WEBHOOK_PAYLOAD: ${{ inputs.webhook_payload }}
         WEBHOOK_FAIL_ON_ERROR: ${{ inputs.webhook_fail_on_error }}
+        WEBHOOK_IMAGE: ${{ steps.prepare.outputs.image }}
+        WEBHOOK_VERSION: ${{ steps.prepare.outputs.version }}
+        WEBHOOK_REFS: ${{ steps.prepare.outputs.refs }}
+        WEBHOOK_DIGEST: ${{ steps.push.outputs.digest }}
       run: python3 -I "$GITHUB_ACTION_PATH/webhook.py"
 
     - name: Clean up credentials

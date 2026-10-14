@@ -95,6 +95,7 @@ docker_config="$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config.XXXXXX")"
 {
   echo "registry=$registry"
   echo "registry_host=${registry%%/*}"
+  echo "image=$image"
   echo "version=$version"
   echo "dockerfile=$dockerfile"
   echo "docker_config=$docker_config"
