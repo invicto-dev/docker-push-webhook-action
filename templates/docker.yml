@@ -50,8 +50,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # Passo 2: monta a imagem, envia para o registry e (opcional) avisa o webhook.
-      # Por padrão a imagem tem o nome do repositório e as tags "latest" e o
-      # código do commit. Para mudar o nome: adicione  name: meu-app
+      # Por padrão a imagem tem o nome do repositório e 3 tags: "latest", o código
+      # completo do commit e uma tag de versão como 2026.10.14-1532Z-c14ae67
+      # (data e hora do commit em UTC + código curto; use-a para rollback).
+      # Para mudar o nome: adicione  name: meu-app
       - uses: invicto-dev/docker-push-webhook-action@v2
         with:
           registry_url: ${{ vars.REGISTRY_URL || secrets.REGISTRY_URL }}

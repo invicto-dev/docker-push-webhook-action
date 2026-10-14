@@ -66,7 +66,18 @@ if [[ ! -f "$dockerfile" ]]; then
 fi
 
 tags="$TAGS"
-if [[ -z "${tags//[[:space:]]/}" ]]; then tags="latest,$GITHUB_SHA"; fi
+version=""
+if [[ -z "${tags//[[:space:]]/}" ]]; then
+  # Rollback-friendly tag: commit date in UTC + short SHA. Sorts by time, and every
+  # image built from the same commit (matrix jobs, re-runs) gets the same tag.
+  stamp="$(TZ=UTC git log -1 --date='format-local:%Y.%m.%d-%H%M' --format=%cd "$GITHUB_SHA" 2>/dev/null || true)"
+  if [[ -z "$stamp" ]]; then
+    stamp="$(date -u +%Y.%m.%d-%H%M)"
+    echo "::notice::Sem histórico git do commit $GITHUB_SHA; a tag de versão usa a hora do build (UTC)."
+  fi
+  version="${stamp}Z-${GITHUB_SHA:0:7}"
+  tags="latest,$GITHUB_SHA,$version"
+fi
 tag_re='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
 refs=()
 count=0
@@ -84,6 +95,7 @@ docker_config="$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config.XXXXXX")"
 {
   echo "registry=$registry"
   echo "registry_host=${registry%%/*}"
+  echo "version=$version"
   echo "dockerfile=$dockerfile"
   echo "docker_config=$docker_config"
   echo "refs<<EOF"

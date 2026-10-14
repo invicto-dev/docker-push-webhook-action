@@ -84,6 +84,12 @@ class DocsConsistencyTest(unittest.TestCase):
             for message in SHARED_MESSAGES + DOC_ERRORS:
                 self.assertIn(message, text, f"{name} não explica o erro: {message}")
 
+    def test_docs_explain_the_version_tag(self):
+        for name in ("README.md", "INSTALAR.md", "llms.txt"):
+            text = (ROOT / name).read_text()
+            self.assertRegex(text, r"\d{4}\.\d{2}\.\d{2}-\d{4}Z-[0-9a-f]{7}", f"{name}: sem exemplo da tag de versão")
+            self.assertIn("UTC", text, f"{name}: não diz que a hora é UTC")
+
     def test_docs_state_secret_scope_rule(self):
         for name in ("INSTALAR.md", "llms.txt"):
             text = (ROOT / name).read_text()

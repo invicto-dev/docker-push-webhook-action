@@ -55,7 +55,7 @@ Para vários Dockerfiles, use `strategy.matrix.include` com `name`, `context` e 
 | `registry_username` | sim | | Usuário |
 | `registry_password` | sim | | Senha ou token (vai por stdin) |
 | `name` | não | nome do repositório | Nome curto da imagem, sem registry nem tag; vira minúsculo |
-| `tags` | não | `latest` e o SHA do commit | Separadas por vírgula ou quebra de linha |
+| `tags` | não | `latest`, o SHA do commit e a tag de versão | Separadas por vírgula ou quebra de linha. Definir substitui os 3 padrões |
 | `context` | não | `.` | Contexto do build |
 | `dockerfile_path` | não | `<context>/Dockerfile` | Arquivo ou pasta do Dockerfile |
 | `build_args` | não | | Um `CHAVE=VALOR` por linha. Nunca coloque segredos aqui |
@@ -64,7 +64,16 @@ Para vários Dockerfiles, use `strategy.matrix.include` com `name`, `context` e 
 | `webhook_payload` | não | | Corpo enviado como está |
 | `webhook_fail_on_error` | não | `true` | Falha o job se o webhook falhar |
 
-A imagem final é `<registry_url>/<name>:<tag>`. Outputs: `image`, `tags`, `digest`.
+A imagem final é `<registry_url>/<name>:<tag>`. Outputs: `image`, `tags`, `digest`, `version`.
+
+## Tags e rollback
+
+Sem `tags`, cada imagem recebe 3 tags: `latest`, o SHA completo do commit e a **tag de versão** `AAAA.MM.DD-HHMMZ-<SHA curto>`, por exemplo `2026.10.14-1532Z-c14ae67`.
+
+- A data e hora são as do **commit, em UTC** (o `Z` indica UTC; Brasília = UTC-3, então `1532Z` = 12:32 em Brasília).
+- Ordem alfabética = ordem cronológica. Para rollback, use a tag de versão anterior à que deu problema; nunca `latest`.
+- Todas as imagens do mesmo commit recebem a mesma tag de versão.
+- Ao explicar para pessoas, sempre diga que a hora é UTC.
 
 ## Regras para a IA
 

@@ -48,6 +48,15 @@ O script acha os Dockerfiles, pergunta o endereço, o usuário e a senha do regi
 
 Em seguida, confira o campo `context` de cada imagem no arquivo criado: se o build falhar procurando arquivos, troque por `.`.
 
+## Voltar para uma versão anterior (rollback)
+
+Cada publicação gera uma tag de versão como `2026.10.14-1532Z-c14ae67`:
+
+- `2026.10.14-1532` é a data e a hora do commit, em **UTC**. O `Z` no final quer dizer UTC. Para o horário de Brasília, **tire 3 horas**: `1532Z` é 12:32 em Brasília.
+- `c14ae67` é o código curto do commit, para achar a mudança no GitHub.
+
+Se uma versão deu problema, abra a lista de tags da imagem no registry (ela já fica em ordem de data) e use a **tag de versão logo anterior**. Não use `latest` para voltar, porque ela sempre aponta para a mais nova. O resumo de cada execução no GitHub (aba Actions) também mostra a versão publicada.
+
 ## Secrets por repositório ou por organização
 
 Por padrão, a variável e os secrets são cadastrados **por repositório** (é o que os dois caminhos acima fazem). Cadastrar uma vez só na **organização** (`bash <(curl -fsSL https://raw.githubusercontent.com/invicto-dev/docker-push-webhook-action/v2/install.sh) --org NOME-DA-ORG`, e é preciso ser owner da organização) evita repetir em cada repositório, **mas só funciona em repositórios privados se a organização tiver plano pago**. No plano gratuito, variáveis e secrets de organização só chegam a repositórios públicos. O script avisa quando detecta essa combinação.
